@@ -1,0 +1,28 @@
+# No-Code Sync
+
+AIQL allows you to export any natural language query as a permanent, high-performance REST endpoint.
+
+## Usage
+
+From the **Interactive Playground**, simply click the **Export API** button on any successful translation. You will be prompted for:
+
+1. **Name**: A descriptive name for the endpoint.
+2. **Path**: The URL segment (e.g., `active-users`).
+
+## Under the Hood
+
+When you export a query, AIQL:
+
+1. Stores the generated SQL/MQL in the management database.
+2. Creates a dynamic route in the Go API layer.
+3. (Optional) Generates a Supabase Edge Function if requested.
+
+## Accessing Endpoints
+
+Once exported, your endpoint is live at:
+
+```
+http://localhost:8080/e/{your-path}
+```
+
+You can now use this URL in your frontend or external integrations without needing to call the LLM again.

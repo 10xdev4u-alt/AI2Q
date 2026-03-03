@@ -1,0 +1,27 @@
+# Self-Healing Loops
+
+One of the core features of AIQL is its ability to automatically correct query errors. This process is called a **Self-Healing Loop**.
+
+## How it Works
+
+1. **Generation**: The LLM generates a SQL/NoSQL query based on your natural language prompt and schema context.
+2. **Dry Run**: AIQL runs `EXPLAIN` or its equivalent to verify the query's syntax and safety.
+3. **Execution**: The query is executed against the database.
+4. **Error Capture**: If the database returns an error (e.g., `column "u_name" does not exist`), AIQL catches it.
+5. **Healing**: The error message and the original query are sent back to the LLM.
+6. **Retry**: The LLM generates a corrected query, which is then re-executed.
+
+## Benefits
+
+- **Zero Downtime**: Hallucinations are corrected in real-time, often in under 100ms.
+- **Improved Accuracy**: The system learns from its mistakes within the same session context.
+- **Developer Confidence**: You can rely on the system to handle minor schema discrepancies automatically.
+
+## Configuration
+
+You can configure the maximum number of healing attempts in your client settings:
+
+```rust
+let client = SmartClient::new(...)
+    .with_max_retries(3);
+```
