@@ -88,6 +88,18 @@ enum Commands {
         #[arg(short, long)]
         url: String,
     },
+    /// Export an AI query to a platform (e.g., Supabase Edge Function)
+    Export {
+        /// Natural language prompt
+        #[arg(short, long)]
+        prompt: String,
+        /// Platform to export to
+        #[arg(long, default_value = "supabase")]
+        platform: String,
+        /// OpenAI API Key
+        #[arg(long, env = "OPENAI_API_KEY")]
+        openai_key: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -214,6 +226,28 @@ async fn main() -> anyhow::Result<()> {
 
             if let aiql_core::TranslateResult::Plan(plan) = result {
                 tui::run_debugger(prompt, &plan.raw_query, &plan.explanation)?;
+            }
+        }
+        Commands::Export { prompt, platform, openai_key } => {
+            println!("{}", "Translating prompt for export...".cyan());
+            let translator = aiql_core::translator::OpenAITranslator::new(
+                openai_key.clone().unwrap_or_default(),
+                "gpt-4-turbo-preview".into()
+            );
+            let schema = aiql_core::Schema { version: "1.0".into(), created_at: chrono::Utc::now(), tables: std::collections::HashMap::new() };
+            let context = aiql_core::Context { now: chrono::Utc::now() };
+            let result = aiql_core::Translator::translate(&translator, prompt, &schema, aiql_core::DatabaseDialect::Postgres, &context, None).await?;
+
+            if let aiql_core::TranslateResult::Plan(plan) = result {
+                match platform.as_str() {
+                    "supabase" => {
+                        let exporter = aiql_core::export::SupabaseExporter;
+                        let code = aiql_core::Exporter::export(&exporter, &plan)?;
+                        println!("{}", "Generated Supabase Edge Function:".green().bold());
+                        println!("{}", code.yellow());
+                    }
+                    _ => println!("{}", format!("Unsupported platform: {}", platform).red()),
+                }
             }
         }
     }
