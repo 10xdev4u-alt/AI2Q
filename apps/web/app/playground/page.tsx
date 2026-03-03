@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { Terminal, Send, Zap, Shield, RefreshCw, Loader2, Braces, History, Ghost } from "lucide-react"
+import { Terminal, Send, Zap, Shield, RefreshCw, Loader2, Braces, History, Ghost, Eye } from "lucide-react"
 import { aiqlApi, TranslateResult, Schema } from "@/lib/aiql"
 import { Badge } from "@/components/ui/badge"
 
@@ -30,6 +30,7 @@ export default function PlaygroundPage() {
   const [dialect, setDialect] = useState("postgres")
   const [shouldExecute, setShouldExecute] = useState(false)
   const [shouldMock, setShouldMock] = useState(false)
+  const [dryRunOnly, setDryRunOnly] = useState(false)
   const [dbUrl, setDbUrl] = useState("")
   const [schemaJson, setSchemaJson] = useState(JSON.stringify(DEFAULT_SCHEMA, null, 2))
   const [history, setHistory] = useState<any[]>([
@@ -120,8 +121,8 @@ export default function PlaygroundPage() {
   return (
     <div className="min-h-screen bg-background p-8 font-mono text-foreground">
       <div className="max-w-5xl mx-auto space-y-8 text-foreground">
-        <div className="border-b-8 border-foreground pb-6">
-          <h1 className="text-5xl font-black uppercase tracking-tighter text-foreground leading-none">Brutalist Playground</h1>
+        <div className="border-b-8 border-foreground pb-6 text-foreground leading-none">
+          <h1 className="text-5xl font-black uppercase tracking-tighter">Brutalist Playground</h1>
           <p className="text-xl font-bold mt-2 opacity-70 italic underline">Deep-dive into the AIQL translation engine.</p>
         </div>
 
@@ -129,7 +130,7 @@ export default function PlaygroundPage() {
           <div className="lg:col-span-1 space-y-6">
             <Card className="border-4 border-foreground rounded-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-primary/10 overflow-hidden">
               <CardContent className="p-4 space-y-4 text-foreground">
-                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 text-foreground">Target Dialect</div>
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2">Target Dialect</div>
                 <select 
                   value={dialect} 
                   onChange={(e) => setDialect(e.target.value)}
@@ -140,7 +141,7 @@ export default function PlaygroundPage() {
                   <option value="postgrest">Supabase (JS)</option>
                 </select>
 
-                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Execution Mode</div>
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2">Execution Mode</div>
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-black uppercase">Real Execute</span>
                   <input 
@@ -159,45 +160,54 @@ export default function PlaygroundPage() {
                     className="w-4 h-4 border-2 border-foreground rounded-none accent-primary"
                   />
                 </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase">Dry Run Only</span>
+                  <input 
+                    type="checkbox" 
+                    checked={dryRunOnly} 
+                    onChange={(e) => setDryRunOnly(e.target.checked)}
+                    className="w-4 h-4 border-2 border-foreground rounded-none accent-primary"
+                  />
+                </div>
                 {shouldExecute && (
                   <Input 
                     value={dbUrl}
                     onChange={(e) => setDbUrl(e.target.value)}
                     placeholder="DB URL..."
-                    className="h-8 border-2 border-foreground rounded-none text-[10px] font-bold bg-background text-foreground"
+                    className="h-8 border-2 border-foreground rounded-none text-[10px] font-bold bg-background"
                   />
                 )}
 
-                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground flex items-center gap-2">
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 flex items-center gap-2">
                   <Braces className="w-3 h-3" /> Schema Context
                 </div>
                 <textarea 
                   value={schemaJson}
                   onChange={(e) => setSchemaJson(e.target.value)}
-                  className="w-full h-32 bg-background border-2 border-foreground p-2 font-mono text-[8px] focus:ring-0 outline-none text-foreground leading-tight"
+                  className="w-full h-32 bg-background border-2 border-foreground p-2 font-mono text-[8px] focus:ring-0 outline-none leading-tight text-foreground"
                 />
 
-                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground flex items-center gap-2">
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 flex items-center gap-2">
                   <History className="w-3 h-3" /> Recent Queries
                 </div>
-                <div className="space-y-1 text-foreground">
+                <div className="space-y-1">
                   {recentQueries.map((q, i) => (
-                    <div key={i} onClick={() => setPrompt(q)} className="text-[8px] font-bold border border-foreground/10 p-1 hover:bg-primary/20 cursor-pointer truncate uppercase">
+                    <div key={i} onClick={() => setPrompt(q)} className="text-[8px] font-bold border border-foreground/10 p-1 hover:bg-primary/20 cursor-pointer truncate uppercase text-foreground">
                       {q}
                     </div>
                   ))}
                   {recentQueries.length === 0 && <div className="text-[8px] italic opacity-50 uppercase">No recent queries</div>}
                 </div>
 
-                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Engine Status</div>
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2">Engine Status</div>
                 <div className="flex items-center gap-2 font-bold text-green-600 animate-pulse text-xs">
                   <Zap className="w-4 h-4" /> ACTIVE
                 </div>
-                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Security</div>
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2">Security</div>
                 <div className="flex items-center gap-2 font-bold text-blue-600 text-xs">
                   <Shield className="w-4 h-4" /> PII_SCRUB_ON
                 </div>
-                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Cache</div>
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2">Cache</div>
                 <div className="flex items-center gap-2 font-bold text-purple-600 text-xs">
                   <RefreshCw className="w-4 h-4" /> SEMANTIC_Ready
                 </div>
@@ -207,7 +217,7 @@ export default function PlaygroundPage() {
 
           <div className="lg:col-span-3 flex flex-col h-[75vh] border-8 border-foreground shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] bg-zinc-950 overflow-hidden text-foreground">
             <div className="bg-foreground text-background p-2 px-4 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-black uppercase">
+              <div className="flex items-center gap-2 text-sm font-black uppercase text-background">
                 <Terminal className="w-4 h-4" /> aiql-core-debug-v1
               </div>
               <div className="flex gap-2">
