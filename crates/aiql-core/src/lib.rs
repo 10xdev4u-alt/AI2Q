@@ -14,13 +14,17 @@ pub struct QueryPlan {
     pub cost: Option<f64>,
 }
 
+/// Translator is responsible for converting natural language prompts into executable database queries.
 #[async_trait::async_trait]
 pub trait Translator {
+    /// Translates a prompt into a query plan given the database schema context.
     async fn translate(&self, prompt: &str, schema: &Schema) -> anyhow::Result<QueryPlan>;
 }
 
+/// QueryHealer is responsible for fixing broken or inefficient queries.
 #[async_trait::async_trait]
 pub trait QueryHealer {
+    /// Heals a broken query by analyzing the error message and schema context.
     async fn heal(&self, query: &str, error: &str, schema: &Schema) -> anyhow::Result<QueryPlan>;
 }
 
