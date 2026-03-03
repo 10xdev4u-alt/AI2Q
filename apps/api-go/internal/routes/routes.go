@@ -175,7 +175,12 @@ func Setup(db *gorm.DB, cfg *config.Config, svc *Services) *gin.Engine {
 	}
 	cronHandler := &handlers.CronHandler{}
 	blogHandler := handlers.NewBlogHandler(db)
+	endpointHandler := &handlers.EndpointHandler{DB: db}
 	// grit:handlers
+
+	// Dynamic Endpoints
+	r.GET("/e/:path", endpointHandler.Execute)
+	r.POST("/api/endpoints", endpointHandler.Create)
 
 	// Health check
 	r.GET("/api/health", func(c *gin.Context) {
