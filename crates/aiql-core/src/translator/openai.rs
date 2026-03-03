@@ -4,6 +4,7 @@ use async_openai::{
     Client,
 };
 use async_trait::async_trait;
+use std::collections::HashMap;
 
 pub struct OpenAITranslator {
     client: Client<async_openai::config::OpenAIConfig>,
@@ -23,19 +24,51 @@ impl OpenAITranslator {
         self
     }
 
-    fn build_schema_context(&self, schema: &Schema, prompt: &str) -> String {
-        let mut context = String::from("Database Schema:\n");
+    fn prune_schema(&self, schema: &Schema, prompt: &str) -> Schema {
         let lowercase_prompt = prompt.to_lowercase();
-        
-        for (table_name, table) in &schema.tables {
-            let table_keyword = table_name.to_lowercase();
-            let is_relevant = lowercase_prompt.contains(&table_keyword) || 
-                             table.columns.iter().any(|c| lowercase_prompt.contains(&c.name.to_lowercase()));
+        let mut pruned_tables = HashMap::new();
+
+        for (name, table) in &schema.tables {
+            let name_lower = name.to_lowercase();
+            let mut is_relevant = lowercase_prompt.contains(&name_lower);
             
-            if !is_relevant && schema.tables.len() > 10 {
-                continue;
+            if !is_relevant {
+                is_relevant = table.columns.iter().any(|c| lowercase_prompt.contains(&c.name.to_lowercase()));
             }
 
+            if is_relevant {
+                pruned_tables.insert(name.clone(), table.clone());
+            }
+        }
+
+        // Include tables that are linked via foreign keys to relevant tables
+        let mut to_add = Vec::new();
+        for table in pruned_tables.values() {
+            for fk in &table.foreign_keys {
+                if !pruned_tables.contains_key(&fk.foreign_table) {
+                    if let Some(foreign_table) = schema.tables.get(&fk.foreign_table) {
+                        to_add.push((fk.foreign_table.clone(), foreign_table.clone()));
+                    }
+                }
+            }
+        }
+
+        for (name, table) in to_add {
+            pruned_tables.insert(name, table);
+        }
+
+        Schema {
+            version: schema.version.clone(),
+            created_at: schema.created_at,
+            tables: pruned_tables,
+        }
+    }
+
+    fn build_schema_context(&self, schema: &Schema, prompt: &str) -> String {
+        let pruned_schema = self.prune_schema(schema, prompt);
+        let mut context = String::from("Database Schema:\n");
+        
+        for (table_name, table) in &pruned_schema.tables {
             context.push_str(&format!("Table: {}\n", table_name));
             for col in &table.columns {
                 let pk = if col.is_primary_key { " (PK)" } else { "" };
@@ -101,6 +134,7 @@ impl Translator for OpenAITranslator {
                 crate::DatabaseDialect::MySQL => "MySQL DATE_SUB/DATE_ADD syntax",
                 crate::DatabaseDialect::SQLite => "SQLite date/strftime functions",
                 crate::DatabaseDialect::MongoDB => "MongoDB date operators ($gte, $lte with Date objects)",
+                crate::DatabaseDialect::Supabase => "Postgres INTERVAL syntax",
             },
             schema_context
         );
@@ -170,6 +204,7 @@ impl Translator for OpenAITranslator {
                 crate::DatabaseDialect::Postgres => "PostgreSQL",
                 crate::DatabaseDialect::MySQL => "MySQL",
                 crate::DatabaseDialect::SQLite => "SQLite",
+                crate::DatabaseDialect::Supabase => "PostgreSQL",
             },
             schema_context
         );
@@ -217,6 +252,7 @@ impl Translator for OpenAITranslator {
                 crate::DatabaseDialect::Postgres => "PostgreSQL (with pgvector)",
                 crate::DatabaseDialect::MySQL => "MySQL (with vector extensions)",
                 crate::DatabaseDialect::SQLite => "SQLite (with vector extensions)",
+                crate::DatabaseDialect::Supabase => "PostgreSQL (with pgvector)",
             },
             context.now,
             schema_context
