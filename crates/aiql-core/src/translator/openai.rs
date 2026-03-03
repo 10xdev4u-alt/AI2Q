@@ -126,6 +126,7 @@ impl Translator for OpenAITranslator {
                 DatabaseDialect::MySQL => "MySQL",
                 DatabaseDialect::SQLite => "SQLite",
                 DatabaseDialect::Supabase => "PostgreSQL (Supabase optimized)",
+                DatabaseDialect::PostgREST => "Supabase JavaScript client (PostgREST)",
             },
             context.now,
             match dialect {
@@ -134,6 +135,7 @@ impl Translator for OpenAITranslator {
                 DatabaseDialect::SQLite => "SQLite date functions",
                 DatabaseDialect::MongoDB => "MongoDB date operators",
                 DatabaseDialect::Supabase => "Postgres INTERVAL syntax",
+                DatabaseDialect::PostgREST => "JavaScript Date objects",
             },
             stream,
             schema_context

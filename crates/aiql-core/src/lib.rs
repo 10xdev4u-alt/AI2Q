@@ -43,6 +43,7 @@ pub enum DatabaseDialect {
     SQLite,
     MongoDB,
     Supabase,
+    PostgREST,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
