@@ -112,6 +112,18 @@ enum Commands {
         #[arg(long, env = "OPENAI_API_KEY")]
         openai_key: Option<String>,
     },
+    /// Generate technical documentation for the database
+    Doc {
+        /// Database URL
+        #[arg(short, long)]
+        url: String,
+        /// OpenAI API Key
+        #[arg(long, env = "OPENAI_API_KEY")]
+        openai_key: Option<String>,
+        /// Output file path
+        #[arg(short, long, default_value = "DB_DOCS.md")]
+        output: String,
+    },
     /// Show engine and performance statistics
     Stats,
     /// Print the version of AIQL CLI
@@ -323,6 +335,27 @@ async fn main() -> anyhow::Result<()> {
                 std::fs::write(file, refactored)?;
                 println!("{}", "File updated successfully!".green().bold());
             }
+        }
+        Commands::Doc { url, openai_key, output } => {
+            println!("{}", "Crawling schema for documentation...".cyan());
+            let pool = PgPoolOptions::new()
+                .max_connections(1)
+                .connect(url)
+                .await?;
+            let crawler = PostgresSchemaCrawler::new(pool);
+            let schema = crawler.crawl().await?;
+
+            println!("{}", "Generating technical manual...".cyan());
+            let translator = aiql_core::translator::OpenAITranslator::new(
+                openai_key.clone().unwrap_or_default(),
+                "gpt-4-turbo-preview".into()
+            );
+
+            let docs = aiql_core::DocGenerator::generate_docs(&translator, &schema).await?;
+
+            println!("{}", format!("Writing documentation to {}...", output).green());
+            std::fs::write(output, docs)?;
+            println!("{}", "Documentation generated successfully!".green().bold());
         }
         Commands::Stats => {
             println!("{}", "AIQL Engine Statistics".green().bold());
