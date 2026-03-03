@@ -1,0 +1,16 @@
+[package]
+name = "aiql-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.102"
+async-trait = "0.1.89"
+chrono = { version = "0.4.44", features = ["serde"] }
+env_logger = "0.11.9"
+log = "0.4.29"
+regex = "1.12.3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+sqlx = { version = "0.8.6", features = ["runtime-tokio-native-tls", "postgres", "mysql", "sqlite"] }
+tokio = { version = "1.50.0", features = ["full"] }
