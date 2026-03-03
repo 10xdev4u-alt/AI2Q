@@ -41,8 +41,8 @@ where
         }
     }
 
-    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>, policy: crate::SafetyPolicy, stream: bool, tenant_id: Option<String>) -> anyhow::Result<AskResult> {
-        log::info!("AIQL: Received prompt: '{}' (stream={}, tenant={:?})", prompt, stream, tenant_id);
+    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>, policy: crate::SafetyPolicy, stream: bool, tenant_id: Option<String>, dry_run_only: bool) -> anyhow::Result<AskResult> {
+        log::info!("AIQL: Received prompt: '{}' (stream={}, tenant={:?}, dry_run={})", prompt, stream, tenant_id, dry_run_only);
 
         let context = crate::Context { 
             now: chrono::Utc::now(),
@@ -122,6 +122,16 @@ where
         if !self.engine.dry_run(&raw_query_with_explanation).await? {
              log::warn!("AIQL: Dry run failed for generated query");
              return Ok(AskResult::Error("Dry run failed for generated query".to_string()));
+        }
+
+        if dry_run_only {
+            return Ok(AskResult::Success(ExecutionResult {
+                success: true,
+                data: None,
+                error: None,
+                execution_time_ms: 0,
+                timestamp: chrono::Utc::now(),
+            }));
         }
 
         // 8. Budget Check
@@ -360,7 +370,7 @@ mod tests {
     async fn test_smart_client_success() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false, None).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false, None, false).await.unwrap();
         match result {
             AskResult::Success(_) => {},
             _ => panic!("Expected Success"),
@@ -371,7 +381,7 @@ mod tests {
     async fn test_smart_client_healing() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false, None).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false, None, false).await.unwrap();
         match result {
             AskResult::Success(_) => {},
             _ => panic!("Expected Success"),
@@ -392,7 +402,7 @@ mod tests {
         }
         let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false, None).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false, None, false).await.unwrap();
         match result {
             AskResult::Error(e) => assert_eq!(e, "Dry run failed for generated query"),
             _ => panic!("Expected Error"),
@@ -455,7 +465,7 @@ mod tests {
 
         let client = SmartClient::new(AmbiguousTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
-        let result = client.ask("get users", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false, None).await.unwrap();
+        let result = client.ask("get users", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false, None, false).await.unwrap();
         match result {
             AskResult::ClarificationNeeded { reason, .. } => assert_eq!(reason, "Too vague"),
             _ => panic!("Expected ClarificationNeeded"),
