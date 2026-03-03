@@ -81,3 +81,37 @@ pub struct ForeignKey {
 pub trait SchemaCrawler {
     async fn crawl(&self) -> anyhow::Result<Schema>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_schema_serialization() {
+        let mut tables = HashMap::new();
+        tables.insert(
+            "users".to_string(),
+            Table {
+                name: "users".to_string(),
+                columns: vec![Column {
+                    name: "id".to_string(),
+                    data_type: "integer".to_string(),
+                    is_nullable: false,
+                    is_primary_key: true,
+                    default_value: None,
+                    description: None,
+                }],
+                indexes: vec![],
+                foreign_keys: vec![],
+                description: Some("Test table".to_string()),
+            },
+        );
+
+        let schema = Schema { tables };
+        let json = serde_json::to_string(&schema).unwrap();
+        let deserialized: Schema = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.tables.len(), 1);
+        assert_eq!(deserialized.tables["users"].name, "users");
+    }
+}
