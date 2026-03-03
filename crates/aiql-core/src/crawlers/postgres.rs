@@ -1,4 +1,5 @@
 use crate::{Column, ForeignKey, Index, Schema, SchemaCrawler, Table};
+use anyhow::Context;
 use async_trait::async_trait;
 use sqlx::postgres::PgPool;
 use std::collections::HashMap;
@@ -28,7 +29,8 @@ impl SchemaCrawler for PostgresSchemaCrawler {
             "#
         )
         .fetch_all(&self.pool)
-        .await?;
+        .await
+        .context("Failed to fetch tables from information_schema")?;
 
         for row in table_rows {
             let table_name = row.table_name.unwrap();
