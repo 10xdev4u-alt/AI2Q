@@ -26,28 +26,44 @@ where
     }
 
     pub async fn ask(&self, prompt: &str, schema: &Schema) -> anyhow::Result<ExecutionResult> {
+        log::info!("AIQL: Received prompt: '{}'", prompt);
+
         // 1. Translate
+        log::debug!("AIQL: Translating prompt...");
         let plan = self.translator.translate(prompt, schema).await?;
+        log::debug!("AIQL: Generated query: {}", plan.raw_query);
 
         // 2. Dry Run
+        log::debug!("AIQL: Performing dry-run validation...");
         if !self.engine.dry_run(&plan.raw_query).await? {
+             log::warn!("AIQL: Dry run failed for generated query");
              return Err(anyhow::anyhow!("Dry run failed for generated query"));
         }
 
         // 3. Execute
+        log::debug!("AIQL: Executing query...");
         let mut result = self.engine.execute(&plan.raw_query).await?;
 
         // 4. Self-Healing Loop
         if !result.success {
             if let Some(error_msg) = result.error.clone() {
+                log::warn!("AIQL: Query failed: {}. Attempting self-healing...", error_msg);
+                
                 // 5. Heal
                 let healed_plan = self.healer.heal(&plan.raw_query, &error_msg, schema).await?;
+                log::info!("AIQL: Healed query: {}", healed_plan.raw_query);
                 
                 // 6. Retry
                 result = self.engine.execute(&healed_plan.raw_query).await?;
+                if result.success {
+                    log::info!("AIQL: Self-healing successful!");
+                } else {
+                    log::error!("AIQL: Self-healing failed: {:?}", result.error);
+                }
             }
         }
 
+        log::info!("AIQL: Request completed in {}ms", result.execution_time_ms);
         Ok(result)
     }
 }
