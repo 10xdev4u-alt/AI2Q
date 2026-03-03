@@ -45,9 +45,14 @@ impl ExecutionEngine for MongoExecutionEngine {
         })
     }
 
-    async fn dry_run(&self, _query: &str) -> anyhow::Result<bool> {
-        // MongoDB doesn't have a direct equivalent to SQL EXPLAIN that returns a bool,
-        // but we can run an explain command on the aggregation.
-        Ok(true) // Simplified
+    async fn dry_run(&self, query: &str) -> anyhow::Result<bool> {
+        let pipeline: Vec<mongodb::bson::Document> = serde_json::from_str(query)?;
+        
+        let coll_name = "sample_collection";
+        let collection = self.db.collection::<mongodb::bson::Document>(coll_name);
+        
+        // Use explain on the aggregate command
+        let explain_res = collection.aggregate(pipeline).explain(None).await;
+        Ok(explain_res.is_ok())
     }
 }
