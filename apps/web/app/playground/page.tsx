@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { Terminal, Send, Zap, Shield, RefreshCw, Loader2, Braces } from "lucide-react"
+import { Terminal, Send, Zap, Shield, RefreshCw, Loader2, Braces, History } from "lucide-react"
 import { aiqlApi, TranslateResult, Schema } from "@/lib/aiql"
 import { Badge } from "@/components/ui/badge"
 
@@ -35,10 +35,21 @@ export default function PlaygroundPage() {
     { role: "system", content: "AIQL Engine v1.0.0 Online. Standing by for natural language instructions." }
   ])
   const [isQuerying, setIsQuerying] = useState(false)
+  const [recentQueries, setRecentQueries] = useState<string[]>([])
+
+  useEffect(() => {
+    const saved = localStorage.getItem("aiql_recent_queries")
+    if (saved) setRecentQueries(JSON.parse(saved))
+  }, [])
 
   const handleQuery = async () => {
     if (!prompt) return
     setIsQuerying(true)
+    
+    const updated = [prompt, ...recentQueries.filter(q => q !== prompt)].slice(0, 5)
+    setRecentQueries(updated)
+    localStorage.setItem("aiql_recent_queries", JSON.stringify(updated))
+
     setHistory(prev => [...prev, { role: "user", content: prompt }])
     
     try {
@@ -152,8 +163,20 @@ export default function PlaygroundPage() {
                 <textarea 
                   value={schemaJson}
                   onChange={(e) => setSchemaJson(e.target.value)}
-                  className="w-full h-48 bg-background border-2 border-foreground p-2 font-mono text-[8px] focus:ring-0 outline-none text-foreground leading-tight"
+                  className="w-full h-32 bg-background border-2 border-foreground p-2 font-mono text-[8px] focus:ring-0 outline-none text-foreground leading-tight"
                 />
+
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground flex items-center gap-2">
+                  <History className="w-3 h-3" /> Recent Queries
+                </div>
+                <div className="space-y-1">
+                  {recentQueries.map((q, i) => (
+                    <div key={i} onClick={() => setPrompt(q)} className="text-[8px] font-bold border border-foreground/10 p-1 hover:bg-primary/20 cursor-pointer truncate uppercase text-foreground">
+                      {q}
+                    </div>
+                  ))}
+                  {recentQueries.length === 0 && <div className="text-[8px] italic opacity-50 uppercase text-foreground">No recent queries</div>}
+                </div>
 
                 <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Engine Status</div>
                 <div className="flex items-center gap-2 font-bold text-green-600 animate-pulse text-xs">
