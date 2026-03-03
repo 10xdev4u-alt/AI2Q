@@ -80,8 +80,13 @@ export default function PlaygroundPage() {
                     <div className="flex-1 whitespace-pre-wrap font-bold leading-tight">
                       {msg.content}
                       {msg.explanation && (
-                        <div className="mt-4 p-4 bg-zinc-900 border-2 border-dashed border-zinc-700 text-zinc-400 text-sm">
-                          -- {msg.explanation}
+                        <div className="mt-4 p-4 bg-zinc-900 border-2 border-dashed border-zinc-700 text-zinc-400 text-sm flex justify-between items-end">
+                          <div>-- {msg.explanation}</div>
+                          {msg.role === 'ai' && (
+                            <Button variant="outline" size="sm" className="h-8 border-zinc-700 text-xs font-black uppercase hover:bg-zinc-800">
+                              Export API
+                            </Button>
+                          )}
                         </div>
                       )}
                     </div>
