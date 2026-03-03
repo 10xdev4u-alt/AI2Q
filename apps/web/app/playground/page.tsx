@@ -4,12 +4,13 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { Terminal, Send, Zap, Shield, RefreshCw } from "lucide-react"
+import { Terminal, Send, Zap, Shield, RefreshCw, Loader2 } from "lucide-react"
+import { aiqlApi, TranslateResult, Schema } from "@/lib/aiql"
 
 export default function PlaygroundPage() {
   const [prompt, setPrompt] = useState("")
   const [dialect, setDialect] = useState("postgres")
-  const [history, setHistory] = useState([
+  const [history, setHistory] = useState<any[]>([
     { role: "system", content: "AIQL Engine v1.0.0 Online. Standing by for natural language instructions." }
   ])
   const [isQuerying, setIsQuerying] = useState(false)
@@ -19,31 +20,51 @@ export default function PlaygroundPage() {
     setIsQuerying(true)
     setHistory(prev => [...prev, { role: "user", content: prompt }])
     
-    // Simulate AIQL Core response based on dialect
-    setTimeout(() => {
-      let content = ""
-      let explanation = ""
-
-      if (dialect === "postgres") {
-        content = "SELECT * FROM users WHERE created_at >= NOW() - INTERVAL '7 days' LIMIT 10;"
-        explanation = "Filtering users who signed up in the last week using Postgres INTERVAL."
-      } else if (dialect === "mongodb") {
-        content = "db.users.find({ created_at: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } }).limit(10)"
-        explanation = "MongoDB find query with date calculation."
-      } else if (dialect === "postgrest") {
-        content = "const { data, error } = await supabase\\n  .from('users')\\n  .select('*')\\n  .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())\\n  .limit(10)"
-        explanation = "Supabase-js client code generation."
+    try {
+      // Small test schema
+      const testSchema: Schema = {
+        version: "1.0",
+        created_at: new Date().toISOString(),
+        tables: {
+          "users": {
+            name: "users",
+            columns: [
+              { name: "id", data_type: "uuid", is_primary_key: true, is_nullable: false, default_value: null, description: null },
+              { name: "email", data_type: "text", is_primary_key: false, is_nullable: false, default_value: null, description: null },
+              { name: "created_at", data_type: "timestamp", is_primary_key: false, is_nullable: false, default_value: null, description: null },
+            ],
+            foreign_keys: [],
+            indexes: []
+          }
+        }
       }
 
-      setHistory(prev => [...prev, { role: "ai", content, explanation }])
+      const result = await aiqlApi.translate(prompt, testSchema)
+      
+      if (result.type === "plan") {
+        setHistory(prev => [...prev, { 
+          role: "ai", 
+          content: result.raw_query,
+          explanation: result.explanation 
+        }])
+      } else {
+        setHistory(prev => [...prev, { 
+          role: "system", 
+          content: `Clarification Needed: ${result.reason}`,
+          suggestions: result.suggestions
+        }])
+      }
+    } catch (err: any) {
+      setHistory(prev => [...prev, { role: "system", content: `Error: ${err.response?.data?.error || err.message}` }])
+    } finally {
       setIsQuerying(false)
       setPrompt("")
-    }, 1500)
+    }
   }
 
   return (
     <div className="min-h-screen bg-background p-8 font-mono text-foreground">
-      <div className="max-w-5xl mx-auto space-y-8">
+      <div className="max-w-5xl mx-auto space-y-8 text-foreground">
         <div className="border-b-8 border-foreground pb-6">
           <h1 className="text-5xl font-black uppercase tracking-tighter">Brutalist Playground</h1>
           <p className="text-xl font-bold mt-2 opacity-70 italic underline">Deep-dive into the AIQL translation engine.</p>
@@ -57,7 +78,7 @@ export default function PlaygroundPage() {
                 <select 
                   value={dialect} 
                   onChange={(e) => setDialect(e.target.value)}
-                  className="w-full bg-background border-2 border-foreground p-2 font-black text-xs uppercase focus:ring-0 outline-none"
+                  className="w-full bg-background border-2 border-foreground p-2 font-black text-xs uppercase focus:ring-0 outline-none text-foreground"
                 >
                   <option value="postgres">Postgres (SQL)</option>
                   <option value="mongodb">MongoDB (MQL)</option>
@@ -99,11 +120,18 @@ export default function PlaygroundPage() {
                     <span className="font-black uppercase min-w-[80px]">{msg.role === 'user' ? '>>>' : msg.role === 'system' ? '[SYS]' : 'AIQL'}</span>
                     <div className="flex-1 whitespace-pre-wrap font-bold leading-tight">
                       {msg.content}
+                      {msg.suggestions && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {msg.suggestions.map((s: string, j: number) => (
+                            <Badge key={j} onClick={() => setPrompt(s)} className="cursor-pointer border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-none">{s}</Badge>
+                          ))}
+                        </div>
+                      )}
                       {msg.explanation && (
                         <div className="mt-4 p-4 bg-zinc-900 border-2 border-dashed border-zinc-700 text-zinc-400 text-sm flex justify-between items-end">
                           <div>-- {msg.explanation}</div>
                           {msg.role === 'ai' && (
-                            <Button variant="outline" size="sm" className="h-8 border-zinc-700 text-xs font-black uppercase hover:bg-zinc-800">
+                            <Button variant="outline" size="sm" className="h-8 border-zinc-700 text-xs font-black uppercase hover:bg-zinc-800 text-zinc-400">
                               Export API
                             </Button>
                           )}
@@ -138,7 +166,7 @@ export default function PlaygroundPage() {
                 disabled={isQuerying}
                 className="h-14 px-8 rounded-none border-2 border-foreground shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all"
               >
-                <Send className="w-6 h-6" />
+                {isQuerying ? <Loader2 className="w-6 h-6 animate-spin" /> : <Send className="w-6 h-6" />}
               </Button>
             </div>
           </div>
