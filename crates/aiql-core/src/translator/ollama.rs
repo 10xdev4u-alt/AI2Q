@@ -28,11 +28,17 @@ impl OllamaTranslator {
 
 #[async_trait]
 impl Translator for OllamaTranslator {
-    async fn translate(&self, prompt: &str, schema: &Schema) -> anyhow::Result<QueryPlan> {
+    async fn translate(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
         let schema_context = self.build_schema_context(schema);
         let system_prompt = format!(
-            "You are an expert SQL translator. Convert natural language to SQL based on the schema below.\n\
+            "You are an expert SQL/NoSQL translator. Convert natural language to {} based on the schema below.\n\
              Return ONLY a JSON object with 'query' and 'explanation' fields.\n\n{}",
+            match dialect {
+                crate::DatabaseDialect::MongoDB => "MongoDB Aggregation Pipeline JSON",
+                crate::DatabaseDialect::Postgres => "PostgreSQL",
+                crate::DatabaseDialect::MySQL => "MySQL",
+                crate::DatabaseDialect::SQLite => "SQLite",
+            },
             schema_context
         );
 
@@ -57,6 +63,7 @@ impl Translator for OllamaTranslator {
         let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
 
         Ok(QueryPlan {
+            dialect,
             raw_query,
             explanation,
             cost: None,

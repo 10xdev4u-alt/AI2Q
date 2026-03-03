@@ -9,7 +9,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DatabaseDialect {
+    Postgres,
+    MySQL,
+    SQLite,
+    MongoDB,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryPlan {
+    pub dialect: DatabaseDialect,
     pub raw_query: String,
     pub explanation: String,
     pub cost: Option<f64>,
@@ -18,8 +27,8 @@ pub struct QueryPlan {
 /// Translator is responsible for converting natural language prompts into executable database queries.
 #[async_trait::async_trait]
 pub trait Translator {
-    /// Translates a prompt into a query plan given the database schema context.
-    async fn translate(&self, prompt: &str, schema: &Schema) -> anyhow::Result<QueryPlan>;
+    /// Translates a prompt into a query plan given the database schema and dialect.
+    async fn translate(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<QueryPlan>;
 }
 
 /// QueryHealer is responsible for fixing broken or inefficient queries.

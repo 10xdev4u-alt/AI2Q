@@ -5,8 +5,9 @@ pub struct MockTranslator;
 
 #[async_trait]
 impl Translator for MockTranslator {
-    async fn translate(&self, prompt: &str, _schema: &Schema) -> anyhow::Result<QueryPlan> {
+    async fn translate(&self, prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
         Ok(QueryPlan {
+            dialect,
             raw_query: format!("-- Mock query for: {}\nSELECT * FROM users LIMIT 10;", prompt),
             explanation: format!("This is a mock translation for '{}'.", prompt),
             cost: Some(0.0),

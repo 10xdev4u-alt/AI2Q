@@ -25,12 +25,12 @@ where
         }
     }
 
-    pub async fn ask(&self, prompt: &str, schema: &Schema) -> anyhow::Result<ExecutionResult> {
+    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<ExecutionResult> {
         log::info!("AIQL: Received prompt: '{}'", prompt);
 
         // 1. Translate
-        log::debug!("AIQL: Translating prompt...");
-        let plan = self.translator.translate(prompt, schema).await?;
+        log::debug!("AIQL: Translating prompt for {:?}...", dialect);
+        let plan = self.translator.translate(prompt, schema, dialect).await?;
         log::debug!("AIQL: Generated query: {}", plan.raw_query);
 
         // 2. Dry Run
@@ -78,8 +78,9 @@ mod tests {
     struct MockTranslator;
     #[async_trait]
     impl Translator for MockTranslator {
-        async fn translate(&self, _prompt: &str, _schema: &Schema) -> anyhow::Result<QueryPlan> {
+        async fn translate(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
             Ok(QueryPlan {
+                dialect,
                 raw_query: "SELECT * FROM users;".to_string(),
                 explanation: "Mock query".to_string(),
                 cost: None,
@@ -148,7 +149,7 @@ mod tests {
     async fn test_smart_client_success() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres).await.unwrap();
         assert!(result.success);
     }
 
@@ -156,7 +157,7 @@ mod tests {
     async fn test_smart_client_healing() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres).await.unwrap();
         assert!(result.success);
     }
 
@@ -174,7 +175,7 @@ mod tests {
         }
         let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema).await;
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres).await;
         assert!(result.is_err());
         assert_eq!(result.err().unwrap().to_string(), "Dry run failed for generated query");
     }
