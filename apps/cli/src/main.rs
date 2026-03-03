@@ -45,7 +45,7 @@ enum Commands {
         /// Use Ollama for local inference
         #[arg(long)]
         use_ollama: bool,
-        /// Database dialect (postgres, mysql, sqlite, mongodb, postgrest)
+        /// Database dialect (postgres, mysql, sqlite, mongodb, postgrest, supabase)
         #[arg(long, default_value = "postgres")]
         dialect: String,
     },
