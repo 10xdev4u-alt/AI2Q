@@ -222,6 +222,13 @@ pub trait Exporter {
     fn export(&self, plan: &QueryPlan) -> anyhow::Result<String>;
 }
 
+/// Advisor provides performance and schema recommendations.
+#[async_trait::async_trait]
+pub trait Advisor {
+    /// Suggests optimizations (like indexes) for a given query plan.
+    async fn advise(&self, plan: &QueryPlan, schema: &Schema) -> anyhow::Result<Vec<String>>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

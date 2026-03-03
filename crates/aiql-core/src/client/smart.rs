@@ -1,6 +1,6 @@
-use crate::{ExecutionEngine, ExecutionResult, QueryHealer, Schema, Translator, EmbeddingEngine, SemanticCache, PrivacyGuard, AskResult, TranslateResult};
+use crate::{ExecutionEngine, ExecutionResult, QueryHealer, Schema, Translator, EmbeddingEngine, SemanticCache, PrivacyGuard, AskResult, TranslateResult, Advisor};
 
-pub struct SmartClient<T, E, H, V, C, P>
+pub struct SmartClient<T, E, H, V, C, P, A>
 where
     T: Translator,
     E: ExecutionEngine,
@@ -8,6 +8,7 @@ where
     V: EmbeddingEngine,
     C: SemanticCache,
     P: PrivacyGuard,
+    A: Advisor,
 {
     translator: T,
     engine: E,
@@ -15,9 +16,10 @@ where
     embedder: V,
     cache: C,
     privacy: P,
+    advisor: A,
 }
 
-impl<T, E, H, V, C, P> SmartClient<T, E, H, V, C, P>
+impl<T, E, H, V, C, P, A> SmartClient<T, E, H, V, C, P, A>
 where
     T: Translator,
     E: ExecutionEngine,
@@ -25,8 +27,9 @@ where
     V: EmbeddingEngine,
     C: SemanticCache,
     P: PrivacyGuard,
+    A: Advisor,
 {
-    pub fn new(translator: T, engine: E, healer: H, embedder: V, cache: C, privacy: P) -> Self {
+    pub fn new(translator: T, engine: E, healer: H, embedder: V, cache: C, privacy: P, advisor: A) -> Self {
         Self {
             translator,
             engine,
@@ -34,6 +37,7 @@ where
             embedder,
             cache,
             privacy,
+            advisor,
         }
     }
 
@@ -143,11 +147,16 @@ where
             result.data = Some(self.privacy.mask_results(data).await?);
         }
 
-        // 12. Execution Time Check
+        // 12. Execution Time Check & Advice
         if let Some(b) = budget {
             if let Some(max_time) = b.max_execution_time_ms {
                 if result.execution_time_ms > max_time {
-                    log::warn!("AIQL: Execution time {}ms exceeds budget {}ms", result.execution_time_ms, max_time);
+                    log::warn!("AIQL: Execution time {}ms exceeds budget {}ms. Fetching advice...", result.execution_time_ms, max_time);
+                    if let Ok(advice) = self.advisor.advise(&plan, schema).await {
+                        for a in advice {
+                            log::info!("AIQL ADVICE: {}", a);
+                        }
+                    }
                 }
             }
         }
@@ -308,6 +317,12 @@ mod tests {
         async fn mask_results(&self, data: serde_json::Value) -> anyhow::Result<serde_json::Value> { Ok(data) }
     }
 
+    struct MockAdvisor;
+    #[async_trait]
+    impl Advisor for MockAdvisor {
+        async fn advise(&self, _plan: &QueryPlan, _schema: &Schema) -> anyhow::Result<Vec<String>> { Ok(vec!["Add index on id".to_string()]) }
+    }
+
     fn mock_schema() -> Schema {
         Schema {
             version: "1.0".to_string(),
@@ -318,7 +333,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_smart_client_success() {
-        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
+        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
         let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite).await.unwrap();
         match result {
@@ -329,7 +344,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_smart_client_healing() {
-        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
+        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
         let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite).await.unwrap();
         match result {
@@ -350,7 +365,7 @@ mod tests {
                 Ok(false)
             }
         }
-        let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer, MockEmbedder, MockCache, MockPrivacy);
+        let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
         let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite).await.unwrap();
         match result {
@@ -380,7 +395,7 @@ mod tests {
             }
         }
 
-        let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
+        let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
         let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite).await.unwrap();
         match result {

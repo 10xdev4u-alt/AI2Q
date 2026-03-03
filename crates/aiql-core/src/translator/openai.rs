@@ -305,7 +305,42 @@ impl Translator for OpenAITranslator {
 }
 
 #[async_trait]
-impl crate::QueryHealer for OpenAITranslator {
+impl crate::Advisor for OpenAITranslator {
+    async fn advise(&self, plan: &QueryPlan, schema: &Schema) -> anyhow::Result<Vec<String>> {
+        let schema_context = self.build_schema_context(schema, &plan.raw_query);
+        let system_prompt = format!(
+            "You are an expert database performance tuner. Analyze the query and schema below and suggest missing indexes or optimizations.\n\
+             Return ONLY a JSON object with an 'advice' field containing an array of strings.\n\n{}",
+            schema_context
+        );
+
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.model)
+            .messages([
+                ChatCompletionRequestSystemMessageArgs::default()
+                    .content(system_prompt)
+                    .build()?
+                    .into(),
+                ChatCompletionRequestUserMessageArgs::default()
+                    .content(format!("Query: {}", plan.raw_query))
+                    .build()?
+                    .into(),
+            ])
+            .response_format(async_openai::types::ResponseFormat::JsonObject)
+            .build()?;
+
+        let response = self.client.chat().create(request).await?;
+        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response"))?;
+        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty content"))?;
+
+        let parsed: serde_json::Value = serde_json::from_str(content)?;
+        let advice = parsed["advice"].as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+
+        Ok(advice)
+    }
+}
     async fn heal(&self, query: &str, error: &str, schema: &Schema, dialect: crate::DatabaseDialect, context: &crate::Context) -> anyhow::Result<QueryPlan> {
         let schema_context = self.build_schema_context(schema, query);
         let system_prompt = format!(
