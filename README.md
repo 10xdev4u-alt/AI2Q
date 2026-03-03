@@ -46,10 +46,39 @@ To democratize database access by providing a universal "Intelligence Driver" th
 - **CLI:** Terminal app for interactive database conversations.
 - **Web Dashboard:** Grit-inspired UI for schema management and monitoring.
 
-## 🛡 License
+## 🗺 Roadmap (200+ Commits Milestone)
 
-Licensed under both [MIT](LICENSE-MIT) and [Apache License, Version 2.0](LICENSE-APACHE).
+We are committed to building the most robust AI Query Layer. Our journey to 200+ commits includes:
 
-## 🤝 Contributing
+- [x] **Phase 1: Foundation (Commits 1-50)**
+    - [x] Monorepo scaffolding with Grit & Rust.
+    - [x] Postgres Schema Crawler (PK/FK/Index detection).
+    - [x] C-FFI, Go, and Python bindings.
+    - [x] CLI basic interface.
+    - [ ] Unit testing suite for core crawlers.
+- [ ] **Phase 2: Intelligence Layer (Commits 51-100)**
+    - [ ] `aiql-translator`: Llama-3/GPT-4 integration.
+    - [ ] `aiql-healer`: Automated error correction loop.
+    - [ ] Dry-run validation using `EXPLAIN`.
+    - [ ] Context pruning for massive schemas.
+- [ ] **Phase 3: Cross-DB & Advanced Flows (Commits 101-150)**
+    - [ ] MongoDB (MQL) and Supabase adapters.
+    - [ ] Vector-Integrated Queries (pgvector).
+    - [ ] Multi-turn "Chat-with-DB" session management.
+    - [ ] Natural Language Migrations.
+- [ ] **Phase 4: Polishing & Production (Commits 151-200+)**
+    - [ ] Grit Web Dashboard (Interactive Schema Map).
+    - [ ] Performance budgeting and rate limiting.
+    - [ ] Privacy masking for PII.
+    - [ ] Comprehensive documentation and tutorials.
 
-We follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) and welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+## 🛠 Features in Depth
+
+### I. Self-Healing Loops
+When a generated query fails (e.g., due to a typo in a column name or a hallucinated join), AIQL doesn't just crash. It catches the error, sends it back to the LLM with the error message and the relevant schema portion, and generates a corrected query. This happens in under 100ms.
+
+### II. Dry-Run Validation
+Every query is run through `EXPLAIN` before execution. If the query is dangerously slow (full table scan on a large table) or invalid, AIQL blocks it and suggests an optimized version.
+
+### III. Cross-DB Translation
+AIQL abstracts the dialect. `ai.ask("Get newest users")` returns MQL for MongoDB and SQL for Postgres, making it the perfect driver for multi-database architectures.
