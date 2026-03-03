@@ -72,6 +72,7 @@ func Ask(c *gin.Context) {
 type MockDataRequest struct {
 	Prompt     string `json:"prompt" binding:"required"`
 	SchemaJSON string `json:"schema_json" binding:"required"`
+	Dialect    string `json:"dialect"`
 }
 
 func GenerateMockData(c *gin.Context) {
