@@ -22,14 +22,32 @@ impl SchemaCrawler for MongoSchemaCrawler {
         let collection_names = self.db.list_collection_names().await?;
 
         for coll_name in collection_names {
-            // MongoDB is schemaless, but we can infer schema by sampling documents
-            // For now, let's just list collections as tables
+            let collection = self.db.collection::<mongodb::bson::Document>(&coll_name);
+            
+            // Sample up to 5 documents to infer fields
+            let mut cursor = collection.find(None).limit(5).await?;
+            let mut inferred_columns = HashMap::new();
+
+            while let Some(doc_res) = cursor.next().await {
+                let doc = doc_res?;
+                for (key, value) in doc {
+                    inferred_columns.insert(key, Column {
+                        name: key.clone(),
+                        data_type: format!("{:?}", value.element_type()),
+                        is_nullable: true,
+                        is_primary_key: key == "_id",
+                        default_value: None,
+                        description: None,
+                    });
+                }
+            }
+
             tables.insert(
                 coll_name.clone(),
                 Table {
                     name: coll_name,
-                    columns: Vec::new(), // TODO: Sampling
-                    indexes: Vec::new(), // TODO: Index discovery
+                    columns: inferred_columns.into_values().collect(),
+                    indexes: Vec::new(),
                     foreign_keys: Vec::new(),
                     description: None,
                 },
