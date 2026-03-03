@@ -28,10 +28,11 @@ impl OllamaTranslator {
 
 #[async_trait]
 impl Translator for OllamaTranslator {
-    async fn translate(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+    async fn translate(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, context: &crate::Context, session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
         let schema_context = self.build_schema_context(schema);
         let system_prompt = format!(
             "You are an expert SQL/NoSQL translator. Convert natural language to {} based on the schema below.\n\
+             Current Time: {}\n\
              If the prompt is ambiguous, return a clarification request.\n\
              Return ONLY a JSON object.\n\
              For successful translation: {{ \"type\": \"plan\", \"query\": \"...\", \"explanation\": \"...\" }}\n\
@@ -42,6 +43,7 @@ impl Translator for OllamaTranslator {
                 crate::DatabaseDialect::MySQL => "MySQL",
                 crate::DatabaseDialect::SQLite => "SQLite",
             },
+            context.now,
             schema_context
         );
 
@@ -131,10 +133,11 @@ impl Translator for OllamaTranslator {
         })
     }
 
-    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, context: &crate::Context, session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
         let schema_context = self.build_schema_context(schema);
         let system_prompt = format!(
             "You are an expert SQL/NoSQL translator specializing in Vector Search. Convert natural language to {} with vector operators.\n\
+             Current Time: {}\n\
              Use '$VECTOR' as a placeholder for the generated embedding vector.\n\
              Return ONLY a JSON object with 'query' and 'explanation' fields.\n\n{}",
             match dialect {
@@ -143,6 +146,7 @@ impl Translator for OllamaTranslator {
                 crate::DatabaseDialect::MySQL => "MySQL (with vector extensions)",
                 crate::DatabaseDialect::SQLite => "SQLite (with vector extensions)",
             },
+            context.now,
             schema_context
         );
 

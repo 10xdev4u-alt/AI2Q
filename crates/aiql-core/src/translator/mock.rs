@@ -5,7 +5,7 @@ pub struct MockTranslator;
 
 #[async_trait]
 impl Translator for MockTranslator {
-    async fn translate(&self, prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+    async fn translate(&self, prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _context: &crate::Context, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
         Ok(TranslateResult::Plan(QueryPlan {
             dialect,
             raw_query: format!("-- Mock query for: {}\nSELECT * FROM users LIMIT 10;", prompt),
@@ -22,7 +22,7 @@ impl Translator for MockTranslator {
         })
     }
 
-    async fn translate_vector(&self, prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+    async fn translate_vector(&self, prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _context: &crate::Context, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
         Ok(TranslateResult::Plan(QueryPlan {
             dialect,
             raw_query: format!("-- Mock vector query for: {}\nSELECT * FROM products ORDER BY embedding <=> '$VECTOR' LIMIT 5;", prompt),

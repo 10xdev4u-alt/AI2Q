@@ -40,6 +40,8 @@ where
     pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>) -> anyhow::Result<AskResult> {
         log::info!("AIQL: Received prompt: '{}'", prompt);
 
+        let context = crate::Context { now: chrono::Utc::now() };
+
         // 1. Privacy Scrubbing
         let scrubbed_prompt = self.privacy.scrub_prompt(prompt).await?;
         if scrubbed_prompt != prompt {
@@ -60,7 +62,7 @@ where
 
         // 3. Translate
         log::debug!("AIQL: Translating prompt for {:?}...", dialect);
-        let translate_result = self.translator.translate(&scrubbed_prompt, schema, dialect, session).await?;
+        let translate_result = self.translator.translate(&scrubbed_prompt, schema, dialect, &context, session).await?;
         
         let plan = match translate_result {
             TranslateResult::ClarificationNeeded { reason, suggestions } => {
@@ -134,9 +136,11 @@ where
     pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>) -> anyhow::Result<AskResult> {
         log::info!("AIQL: Received vector prompt: '{}'", prompt);
 
+        let context = crate::Context { now: chrono::Utc::now() };
+
         // 1. Translate with placeholder
         log::debug!("AIQL: Translating vector prompt...");
-        let translate_result = self.translator.translate_vector(prompt, schema, dialect, session).await?;
+        let translate_result = self.translator.translate_vector(prompt, schema, dialect, &context, session).await?;
         
         let plan = match translate_result {
             TranslateResult::ClarificationNeeded { reason, suggestions } => {
@@ -176,7 +180,7 @@ mod tests {
     struct MockTranslator;
     #[async_trait]
     impl Translator for MockTranslator {
-        async fn translate(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+        async fn translate(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _context: &crate::Context, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
             Ok(TranslateResult::Plan(QueryPlan {
                 dialect,
                 raw_query: "SELECT * FROM users;".to_string(),
@@ -193,7 +197,7 @@ mod tests {
             })
         }
 
-        async fn translate_vector(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+        async fn translate_vector(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _context: &crate::Context, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
             Ok(TranslateResult::Plan(QueryPlan {
                 dialect,
                 raw_query: "SELECT * FROM items ORDER BY embedding <=> '$VECTOR' LIMIT 1;".to_string(),
@@ -331,13 +335,13 @@ mod tests {
         struct VectorTranslator;
         #[async_trait]
         impl Translator for VectorTranslator {
-            async fn translate(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _sess: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+            async fn translate(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _c: &crate::Context, _sess: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
                 Ok(TranslateResult::Plan(QueryPlan { dialect: d, raw_query: "".to_string(), explanation: "".to_string(), cost: None }))
             }
             async fn translate_migration(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect) -> anyhow::Result<crate::MigrationPlan> {
                 Ok(crate::MigrationPlan { dialect: d, raw_sql: "".to_string(), explanation: "".to_string() })
             }
-            async fn translate_vector(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _sess: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+            async fn translate_vector(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _c: &crate::Context, _sess: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
                 Ok(TranslateResult::Plan(QueryPlan { 
                     dialect: d, 
                     raw_query: "SELECT * FROM items ORDER BY embedding <=> '$VECTOR' LIMIT 1;".to_string(), 

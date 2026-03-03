@@ -95,17 +95,22 @@ pub enum TranslateResult {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Context {
+    pub now: chrono::DateTime<chrono::Utc>,
+}
+
 /// Translator is responsible for converting natural language prompts into executable database queries.
 #[async_trait::async_trait]
 pub trait Translator {
-    /// Translates a prompt into a query plan or clarification request given the database schema, dialect, and session history.
-    async fn translate(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect, session: Option<&Session>) -> anyhow::Result<TranslateResult>;
+    /// Translates a prompt into a query plan or clarification request given the database schema, dialect, context, and session history.
+    async fn translate(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect, context: &Context, session: Option<&Session>) -> anyhow::Result<TranslateResult>;
 
     /// Translates a natural language migration prompt into a migration plan.
     async fn translate_migration(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<MigrationPlan>;
 
     /// Translates a natural language prompt into a query plan that includes vector search placeholders.
-    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect, session: Option<&Session>) -> anyhow::Result<TranslateResult>;
+    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect, context: &Context, session: Option<&Session>) -> anyhow::Result<TranslateResult>;
 }
 
 /// QueryHealer is responsible for fixing broken or inefficient queries.
