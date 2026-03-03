@@ -46,3 +46,25 @@ func Translate(c *gin.Context) {
 
 	c.Data(http.StatusOK, "application/json", []byte(result))
 }
+
+type AskRequest struct {
+	Prompt     string `json:"prompt" binding:"required"`
+	DbURL      string `json:"db_url" binding:"required"`
+	SchemaJSON string `json:"schema_json" binding:"required"`
+}
+
+func Ask(c *gin.Context) {
+	var req AskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	result, err := aiql.Ask(req.Prompt, req.DbURL, req.SchemaJSON)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Data(http.StatusOK, "application/json", []byte(result))
+}
