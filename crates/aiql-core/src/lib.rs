@@ -1,6 +1,8 @@
 pub mod crawlers;
 pub mod translator;
 pub mod execution;
+pub mod healer;
+pub mod client;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
