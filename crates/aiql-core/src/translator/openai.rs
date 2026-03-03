@@ -8,13 +8,19 @@ use async_trait::async_trait;
 pub struct OpenAITranslator {
     client: Client<async_openai::config::OpenAIConfig>,
     model: String,
+    temperature: f32,
 }
 
 impl OpenAITranslator {
     pub fn new(api_key: String, model: String) -> Self {
         let config = async_openai::config::OpenAIConfig::new().with_api_key(api_key);
         let client = Client::with_config(config);
-        Self { client, model }
+        Self { client, model, temperature: 0.0 }
+    }
+
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temperature = temperature;
+        self
     }
 
     fn build_schema_context(&self, schema: &Schema, prompt: &str) -> String {
@@ -83,6 +89,7 @@ impl Translator for OpenAITranslator {
 
         let request = CreateChatCompletionRequestArgs::default()
             .model(&self.model)
+            .temperature(self.temperature)
             .messages([
                 ChatCompletionRequestSystemMessageArgs::default()
                     .content(system_prompt)
