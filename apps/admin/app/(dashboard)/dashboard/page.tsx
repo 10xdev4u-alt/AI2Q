@@ -36,6 +36,8 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatsCard label="Total Resources" value="—" icon="Database" color="accent" />
           <StatsCard label="Registered" value={String(resources.length)} icon="Layers" color="success" />
+          <StatsCard label="AI Latency" value="120ms" icon="Zap" color="warning" />
+          <StatsCard label="Cache Rate" value="85%" icon="RefreshCw" color="info" />
         </div>
       )}
 
