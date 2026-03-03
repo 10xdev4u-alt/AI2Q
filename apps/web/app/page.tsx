@@ -1,147 +1,126 @@
-"use client";
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Database, Search, Shield, Zap, RefreshCw, Layers } from "lucide-react"
 
-import { ArrowRight } from "lucide-react";
-import Link from "next/link";
-import { usePublicBlogs } from "@/hooks/use-blogs";
-
-const DOCS_URL = "https://grit-vert.vercel.app/docs";
-
-export default function HomePage() {
-  const { data, isLoading } = usePublicBlogs(1, 3);
-  const blogs = data?.blogs || [];
-
+export default function Home() {
   return (
-    <div className="flex flex-col">
-      {/* Hero */}
-      <section className="flex items-center justify-center">
-        <div className="mx-auto max-w-2xl px-6 py-24 text-center">
-          <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-border bg-bg-secondary px-4 py-1.5 text-sm text-text-secondary">
-            <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-            <span>Go + React Full-Stack Framework</span>
+    <div className="flex flex-col min-h-screen bg-background text-foreground selection:bg-primary selection:text-primary-foreground font-mono">
+      {/* Hero Section */}
+      <section className="py-20 px-6 border-b-4 border-foreground">
+        <div className="max-w-6xl mx-auto space-y-12">
+          <div className="space-y-6">
+            <Badge variant="outline" className="border-2 border-foreground rounded-none px-4 py-1 text-lg font-bold">
+              v1.0.0-ALPHA
+            </Badge>
+            <h1 className="text-7xl md:text-9xl font-black tracking-tighter uppercase leading-none">
+              AI<span className="text-primary italic underline underline-offset-8 decoration-4">QL</span>
+            </h1>
+            <p className="text-2xl md:text-4xl font-bold max-w-3xl leading-tight border-l-8 border-foreground pl-6 py-4">
+              Don't Query. Just Ask. The Universal AI Intelligence Driver for Your Database.
+            </p>
           </div>
 
-          <h1 className="text-5xl font-bold tracking-tight sm:text-6xl lg:text-7xl">
-            <span className="text-accent">Grit</span>
-          </h1>
-
-          <p className="mt-6 text-lg text-text-secondary leading-relaxed max-w-lg mx-auto">
-            The full-stack meta-framework that fuses Go, React, and a
-            Filament-like admin panel. Scaffold entire projects, generate
-            resources, and ship fast.
-          </p>
-
-          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a
-              href={`${DOCS_URL}/getting-started/quick-start`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-white hover:bg-accent-hover transition-colors"
-            >
-              Get Started <ArrowRight className="h-4 w-4" />
-            </a>
-            <a
-              href={`${DOCS_URL}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-lg border border-border bg-bg-secondary px-6 py-3 text-sm font-semibold text-foreground hover:bg-bg-hover transition-colors"
-            >
-              Read the Docs
-            </a>
-          </div>
-
-          {/* Terminal snippet */}
-          <div className="mt-16 mx-auto max-w-md rounded-xl border border-border bg-bg-secondary shadow-2xl overflow-hidden text-left">
-            <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-              <div className="h-2.5 w-2.5 rounded-full bg-danger/60" />
-              <div className="h-2.5 w-2.5 rounded-full bg-warning/60" />
-              <div className="h-2.5 w-2.5 rounded-full bg-success/60" />
-              <span className="ml-2 text-[11px] text-text-muted font-mono">terminal</span>
-            </div>
-            <div className="p-5 font-mono text-sm space-y-1.5">
-              <p><span className="text-success select-none">$ </span><span className="text-foreground">grit new my-saas</span></p>
-              <p><span className="text-success select-none">$ </span><span className="text-foreground">cd my-saas && docker compose up -d</span></p>
-              <p><span className="text-success select-none">$ </span><span className="text-foreground">pnpm dev</span></p>
-              <p className="text-success pt-1">Ready on http://localhost:3000</p>
-            </div>
+          <div className="flex flex-col md:flex-row gap-6">
+            <Button size="lg" className="h-16 px-12 text-2xl font-black rounded-none border-4 border-foreground shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all">
+              GET STARTED
+            </Button>
+            <Button size="lg" variant="outline" className="h-16 px-12 text-2xl font-black rounded-none border-4 border-foreground shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] bg-white text-black hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all">
+              VIEW DOCS
+            </Button>
           </div>
         </div>
       </section>
 
-      {/* Recent Posts */}
-      <section className="border-t border-border/50 bg-bg-secondary/30">
-        <div className="mx-auto max-w-5xl px-6 py-20">
-          <div className="flex items-center justify-between mb-10">
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight">Recent Posts</h2>
-              <p className="mt-1 text-sm text-text-secondary">Latest articles and updates</p>
+      {/* Feature Grid */}
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+        {[
+          {
+            title: "Schema Crawler",
+            desc: "Auto-ingests your entire database schema with PK/FK and Index detection.",
+            icon: Database,
+            color: "bg-blue-400"
+          },
+          {
+            title: "Self-Healing",
+            desc: "Invisibly retries queries on schema errors, correcting hallucinations automatically.",
+            icon: RefreshCw,
+            color: "bg-green-400"
+          },
+          {
+            title: "Universal Bridge",
+            desc: "Write once in Go, Python, or C++ using our shared Rust core.",
+            icon: Layers,
+            color: "bg-purple-400"
+          },
+          {
+            title: "Ambiguity Guard",
+            desc: "No more guessing. AIQL asks for clarification when prompts are too vague.",
+            icon: Search,
+            color: "bg-yellow-400"
+          },
+          {
+            title: "Security First",
+            desc: "PII masking and read-only enforcement built into the driver core.",
+            icon: Shield,
+            color: "bg-red-400"
+          },
+          {
+            title: "High Performance",
+            desc: "Rust-powered engine for ultra-low latency Txt2Sql translation.",
+            icon: Zap,
+            color: "bg-orange-400"
+          }
+        ].map((feature, i) => (
+          <div key={i} className={`p-10 border-r-4 border-b-4 border-foreground group hover:${feature.color} transition-colors duration-500`}>
+            <div className="mb-6">
+              <feature.icon className="w-16 h-16 stroke-[3px]" />
             </div>
-            <Link
-              href="/blog"
-              className="text-sm text-accent hover:text-accent-hover transition-colors font-medium flex items-center gap-1"
-            >
-              View all <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
+            <h3 className="text-3xl font-black mb-4 uppercase">{feature.title}</h3>
+            <p className="text-xl font-bold leading-snug">
+              {feature.desc}
+            </p>
+          </div>
+        ))}
+      </section>
+
+      {/* Console Playground */}
+      <section className="py-20 px-6 border-b-4 border-foreground bg-foreground text-background">
+        <div className="max-w-4xl mx-auto space-y-12">
+          <div className="text-center space-y-4">
+            <h2 className="text-5xl md:text-7xl font-black uppercase tracking-tighter italic">Experience the Magic</h2>
+            <p className="text-xl md:text-2xl font-bold opacity-80">Try the natural language interface in our playground</p>
           </div>
 
-          {isLoading ? (
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="rounded-xl border border-border bg-bg-elevated overflow-hidden animate-pulse">
-                  <div className="h-48 bg-bg-hover" />
-                  <div className="p-5 space-y-3">
-                    <div className="h-4 bg-bg-hover rounded w-3/4" />
-                    <div className="h-3 bg-bg-hover rounded w-full" />
-                    <div className="h-3 bg-bg-hover rounded w-2/3" />
-                  </div>
+          <div className="border-8 border-background bg-zinc-900 p-8 shadow-[12px_12px_0px_0px_rgba(255,255,255,0.2)]">
+            <div className="flex gap-4 mb-8">
+              <Input 
+                placeholder="Ask your database: 'Top 5 users by revenue this month...'" 
+                className="h-16 bg-zinc-800 border-4 border-background text-2xl font-bold rounded-none focus-visible:ring-0 focus-visible:border-primary"
+              />
+              <Button className="h-16 px-8 text-2xl font-black rounded-none border-4 border-background bg-primary hover:bg-primary/90">
+                QUERY
+              </Button>
+            </div>
+
+            <div className="space-y-4 font-mono text-xl opacity-80">
+              <div className="flex gap-2">
+                <span className="text-green-400">$</span>
+                <span>aiql.ask("Who joined last week?")</span>
+              </div>
+              <div className="p-6 bg-zinc-800 border-2 border-dashed border-background/20">
+                <pre className="text-yellow-400">
+                  {`SELECT * FROM users\nWHERE created_at >= NOW() - INTERVAL '7 days';`}
+                </pre>
+                <div className="mt-4 text-blue-400 italic">
+                  -- Generating query using User and Profile tables...
                 </div>
-              ))}
+              </div>
             </div>
-          ) : blogs.length > 0 ? (
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {blogs.map((blog: { id: number; title: string; slug: string; image: string; excerpt: string; published_at: string | null; created_at: string }) => (
-                <Link
-                  key={blog.id}
-                  href={`/blog/${blog.slug}`}
-                  className="group rounded-xl border border-border bg-bg-elevated overflow-hidden hover:border-accent/40 hover:shadow-lg hover:shadow-accent/5 transition-all duration-300"
-                >
-                  <div className="h-48 bg-bg-hover overflow-hidden">
-                    {blog.image ? (
-                      <img
-                        src={blog.image}
-                        alt={blog.title}
-                        className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
-                    ) : (
-                      <div className="h-full w-full flex items-center justify-center bg-gradient-to-br from-accent/10 to-accent/5">
-                        <span className="text-4xl font-bold text-accent/20">{blog.title.charAt(0)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-5">
-                    <p className="text-xs text-text-muted mb-2">
-                      {new Date(blog.published_at || blog.created_at).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </p>
-                    <h3 className="font-semibold text-foreground group-hover:text-accent transition-colors line-clamp-2">
-                      {blog.title}
-                    </h3>
-                    {blog.excerpt && (
-                      <p className="mt-2 text-sm text-text-secondary line-clamp-2">{blog.excerpt}</p>
-                    )}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <p className="text-text-muted text-sm">No blog posts yet. Create your first post in the admin panel.</p>
-            </div>
-          )}
+          </div>
         </div>
       </section>
     </div>
-  );
+  )
 }
