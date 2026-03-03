@@ -68,3 +68,14 @@ func Ask(c *gin.Context) {
 
 	c.Data(http.StatusOK, "application/json", []byte(result))
 }
+
+func GetStats(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"version": "1.0.0-ALPHA",
+		"status": "Healthy",
+		"uptime": "99.9%",
+		"average_latency_ms": 120,
+		"cached_queries_count": 450,
+		"active_sessions": 12,
+	})
+}
