@@ -4,6 +4,7 @@ pub mod execution;
 pub mod healer;
 pub mod client;
 pub mod utils;
+pub mod migration;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -22,6 +23,19 @@ pub struct QueryPlan {
     pub raw_query: String,
     pub explanation: String,
     pub cost: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MigrationPlan {
+    pub dialect: DatabaseDialect,
+    pub raw_sql: String,
+    pub explanation: String,
+}
+
+#[async_trait::async_trait]
+pub trait MigrationEngine {
+    /// Executes a migration plan against the database.
+    async fn migrate(&self, plan: &MigrationPlan) -> anyhow::Result<()>;
 }
 
 /// Translator is responsible for converting natural language prompts into executable database queries.
