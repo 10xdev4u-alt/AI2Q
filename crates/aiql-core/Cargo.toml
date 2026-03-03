@@ -5,9 +5,11 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.102"
+async-openai = "0.33.0"
 async-trait = "0.1.89"
 chrono = { version = "0.4.44", features = ["serde"] }
 env_logger = "0.11.9"
+futures-util = "0.3.32"
 log = "0.4.29"
 regex = "1.12.3"
 serde = { version = "1.0.228", features = ["derive"] }
