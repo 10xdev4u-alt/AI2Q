@@ -1,5 +1,7 @@
 import { usersResource } from "./users";
 import { blogsResource } from "./blogs";
+import { executionLogsResource } from "./execution-logs";
+import { endpointsResource } from "./endpoints";
 // grit:resources
 
 import type { ResourceDefinition } from "@/lib/resource";
@@ -7,6 +9,8 @@ import type { ResourceDefinition } from "@/lib/resource";
 export const resources: ResourceDefinition[] = [
   usersResource,
   blogsResource,
+  executionLogsResource,
+  endpointsResource,
   // grit:resource-list
 ];
 
