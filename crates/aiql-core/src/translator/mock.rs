@@ -31,3 +31,17 @@ impl Translator for MockTranslator {
         }))
     }
 }
+
+#[async_trait]
+impl crate::EmbeddingEngine for MockTranslator {
+    async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
+        Ok(vec![0.0; 1536])
+    }
+}
+
+#[async_trait]
+impl crate::Advisor for MockTranslator {
+    async fn advise(&self, _plan: &QueryPlan, _schema: &Schema) -> anyhow::Result<Vec<String>> {
+        Ok(vec!["Consider adding an index on frequently filtered columns.".to_string()])
+    }
+}
