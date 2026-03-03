@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Terminal, Send, Zap, Shield, RefreshCw, Loader2 } from "lucide-react"
 import { aiqlApi, TranslateResult, Schema } from "@/lib/aiql"
+import { Badge } from "@/components/ui/badge"
 
 export default function PlaygroundPage() {
   const [prompt, setPrompt] = useState("")
@@ -62,19 +63,33 @@ export default function PlaygroundPage() {
     }
   }
 
+  const handleExport = async (msgPrompt: string, sql: string) => {
+    const name = window.prompt("Enter a name for this API endpoint:", "My AI Query");
+    if (!name) return;
+    const path = window.prompt("Enter a URL path for this endpoint (e.g., my-query):", name.toLowerCase().replace(/\s+/g, "-"));
+    if (!path) return;
+
+    try {
+      await aiqlApi.export(name, path, msgPrompt, sql);
+      alert(`API Exported successfully! URL: http://localhost:8080/e/${path}`);
+    } catch (err: any) {
+      alert(`Failed to export API: ${err.message}`);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background p-8 font-mono text-foreground">
       <div className="max-w-5xl mx-auto space-y-8 text-foreground">
         <div className="border-b-8 border-foreground pb-6">
-          <h1 className="text-5xl font-black uppercase tracking-tighter">Brutalist Playground</h1>
+          <h1 className="text-5xl font-black uppercase tracking-tighter text-foreground leading-none">Brutalist Playground</h1>
           <p className="text-xl font-bold mt-2 opacity-70 italic underline">Deep-dive into the AIQL translation engine.</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           <div className="lg:col-span-1 space-y-6">
             <Card className="border-4 border-foreground rounded-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-primary/10">
-              <CardContent className="p-4 space-y-4">
-                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2">Target Dialect</div>
+              <CardContent className="p-4 space-y-4 text-foreground">
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 text-foreground">Target Dialect</div>
                 <select 
                   value={dialect} 
                   onChange={(e) => setDialect(e.target.value)}
@@ -85,15 +100,15 @@ export default function PlaygroundPage() {
                   <option value="postgrest">Supabase (JS)</option>
                 </select>
 
-                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2">Engine Status</div>
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Engine Status</div>
                 <div className="flex items-center gap-2 font-bold text-green-600 animate-pulse">
                   <Zap className="w-4 h-4" /> ACTIVE
                 </div>
-                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2">Security</div>
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Security</div>
                 <div className="flex items-center gap-2 font-bold text-blue-600">
                   <Shield className="w-4 h-4" /> PII_SCRUB_ON
                 </div>
-                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2">Cache</div>
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Cache</div>
                 <div className="flex items-center gap-2 font-bold text-purple-600">
                   <RefreshCw className="w-4 h-4" /> SEMANTIC_Ready
                 </div>
@@ -131,7 +146,12 @@ export default function PlaygroundPage() {
                         <div className="mt-4 p-4 bg-zinc-900 border-2 border-dashed border-zinc-700 text-zinc-400 text-sm flex justify-between items-end">
                           <div>-- {msg.explanation}</div>
                           {msg.role === 'ai' && (
-                            <Button variant="outline" size="sm" className="h-8 border-zinc-700 text-xs font-black uppercase hover:bg-zinc-800 text-zinc-400">
+                            <Button 
+                              onClick={() => handleExport(history[i-1].content, msg.content)}
+                              variant="outline" 
+                              size="sm" 
+                              className="h-8 border-zinc-700 text-xs font-black uppercase hover:bg-zinc-800 text-zinc-400"
+                            >
                               Export API
                             </Button>
                           )}

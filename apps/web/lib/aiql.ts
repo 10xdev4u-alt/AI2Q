@@ -50,4 +50,14 @@ export const aiqlApi = {
     });
     return data;
   },
+  export: async (name: string, path: string, prompt: string, sql: string): Promise<any> => {
+    const { data } = await api.post("/api/endpoints", {
+      name,
+      path,
+      prompt,
+      sql,
+      method: "GET"
+    });
+    return data;
+  }
 };
