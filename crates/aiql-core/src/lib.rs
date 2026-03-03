@@ -3,6 +3,7 @@ pub mod translator;
 pub mod execution;
 pub mod healer;
 pub mod client;
+pub mod utils;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
