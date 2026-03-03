@@ -95,6 +95,12 @@ pub trait QueryHealer {
     async fn heal(&self, query: &str, error: &str, schema: &Schema) -> anyhow::Result<QueryPlan>;
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Budget {
+    pub max_execution_time_ms: Option<u64>,
+    pub max_cost: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionResult {
     pub success: bool,

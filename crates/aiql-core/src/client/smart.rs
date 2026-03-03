@@ -37,7 +37,7 @@ where
         }
     }
 
-    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<ExecutionResult> {
+    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>) -> anyhow::Result<ExecutionResult> {
         log::info!("AIQL: Received prompt: '{}'", prompt);
 
         // 1. Privacy Scrubbing
@@ -70,12 +70,30 @@ where
              return Err(anyhow::anyhow!("Dry run failed for generated query"));
         }
 
-        // 5. Store in Cache if valid
+        // 5. Budget Check
+        if let Some(b) = budget {
+            if let (Some(plan_cost), Some(max_cost)) = (plan.cost, b.max_cost) {
+                if plan_cost > max_cost {
+                    return Err(anyhow::anyhow!("Query cost {} exceeds budget {}", plan_cost, max_cost));
+                }
+            }
+        }
+
+        // 6. Store in Cache if valid
         self.cache.set(&embedding, plan.clone()).await?;
 
-        // 6. Execute
+        // 7. Execute
         log::debug!("AIQL: Executing query...");
         let mut result = self.engine.execute(&plan.raw_query).await?;
+
+        // 8. Execution Time Check
+        if let Some(b) = budget {
+            if let Some(max_time) = b.max_execution_time_ms {
+                if result.execution_time_ms > max_time {
+                    log::warn!("AIQL: Execution time {}ms exceeds budget {}ms", result.execution_time_ms, max_time);
+                }
+            }
+        }
 
         // 7. Self-Healing Loop
         if !result.success {
@@ -105,7 +123,7 @@ where
         Ok(result)
     }
 
-    pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<ExecutionResult> {
+    pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>) -> anyhow::Result<ExecutionResult> {
         log::info!("AIQL: Received vector prompt: '{}'", prompt);
 
         // 1. Translate with placeholder
@@ -247,7 +265,7 @@ mod tests {
     async fn test_smart_client_success() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None).await.unwrap();
         assert!(result.success);
     }
 
@@ -255,7 +273,7 @@ mod tests {
     async fn test_smart_client_healing() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None).await.unwrap();
         assert!(result.success);
     }
 
@@ -273,7 +291,7 @@ mod tests {
         }
         let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await;
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None).await;
         assert!(result.is_err());
         assert_eq!(result.err().unwrap().to_string(), "Dry run failed for generated query");
     }
@@ -301,7 +319,7 @@ mod tests {
 
         let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
-        let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await.unwrap();
+        let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None).await.unwrap();
         assert!(result.success);
     }
 }
