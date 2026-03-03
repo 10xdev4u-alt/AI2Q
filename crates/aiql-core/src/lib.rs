@@ -8,6 +8,7 @@ pub mod migration;
 pub mod vector;
 pub mod cache;
 pub mod privacy;
+pub mod discovery;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -184,6 +185,13 @@ pub struct ForeignKey {
 pub trait SchemaCrawler {
     /// Crawls the database to extract tables, columns, indexes, and relationships.
     async fn crawl(&self) -> anyhow::Result<Schema>;
+}
+
+/// RelationshipDiscoverer finds hidden relationships between tables.
+#[async_trait::async_trait]
+pub trait RelationshipDiscoverer {
+    /// Discovers relationships in the schema that are not explicitly defined as foreign keys.
+    async fn discover(&self, schema: &mut Schema) -> anyhow::Result<()>;
 }
 
 #[cfg(test)]
