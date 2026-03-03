@@ -48,6 +48,8 @@ pub trait ExecutionEngine {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schema {
+    pub version: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
     pub tables: HashMap<String, Table>,
 }
 
@@ -117,7 +119,11 @@ mod tests {
             },
         );
 
-        let schema = Schema { tables };
+        let schema = Schema { 
+            version: "1.0".into(), 
+            created_at: chrono::Utc::now(), 
+            tables 
+        };
         let json = serde_json::to_string(&schema).unwrap();
         let deserialized: Schema = serde_json::from_str(&json).unwrap();
 

@@ -133,10 +133,26 @@ mod tests {
         }
     }
 
+    fn mock_schema() -> Schema {
+        Schema {
+            version: "1.0".to_string(),
+            created_at: chrono::Utc::now(),
+            tables: HashMap::new(),
+        }
+    }
+
     #[tokio::test]
     async fn test_smart_client_success() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer);
-        let schema = Schema { tables: HashMap::new() };
+        let schema = mock_schema();
+        let result = client.ask("prompt", &schema).await.unwrap();
+        assert!(result.success);
+    }
+
+    #[tokio::test]
+    async fn test_smart_client_healing() {
+        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer);
+        let schema = mock_schema();
         let result = client.ask("prompt", &schema).await.unwrap();
         assert!(result.success);
     }
@@ -154,7 +170,7 @@ mod tests {
             }
         }
         let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer);
-        let schema = Schema { tables: HashMap::new() };
+        let schema = mock_schema();
         let result = client.ask("prompt", &schema).await;
         assert!(result.is_err());
         assert_eq!(result.err().unwrap().to_string(), "Dry run failed for generated query");

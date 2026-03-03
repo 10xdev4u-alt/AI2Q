@@ -163,6 +163,10 @@ impl SchemaCrawler for PostgresSchemaCrawler {
             );
         }
 
-        Ok(Schema { tables })
+        Ok(Schema {
+            version: "1.0.0".to_string(),
+            created_at: chrono::Utc::now(),
+            tables,
+        })
     }
 }
