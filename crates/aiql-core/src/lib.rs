@@ -7,9 +7,18 @@ pub mod utils;
 pub mod migration;
 pub mod vector;
 pub mod cache;
+pub mod privacy;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+#[async_trait::async_trait]
+pub trait PrivacyGuard {
+    /// Checks a prompt for PII and returns a masked version or an error if unsafe.
+    async fn scrub_prompt(&self, prompt: &str) -> anyhow::Result<String>;
+    /// Masks PII in result data.
+    async fn mask_results(&self, data: serde_json::Value) -> anyhow::Result<serde_json::Value>;
+}
 
 #[async_trait::async_trait]
 pub trait SemanticCache {
