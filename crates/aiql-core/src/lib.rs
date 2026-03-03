@@ -36,9 +36,12 @@ pub struct ExecutionResult {
     pub execution_time_ms: u64,
 }
 
+/// ExecutionEngine runs queries against a database and returns structured results.
 #[async_trait::async_trait]
 pub trait ExecutionEngine {
+    /// Executes a query and returns result data or an error message.
     async fn execute(&self, query: &str) -> anyhow::Result<ExecutionResult>;
+    /// Runs an EXPLAIN plan to verify query safety and correctness.
     async fn dry_run(&self, query: &str) -> anyhow::Result<bool>;
 }
 
@@ -81,8 +84,10 @@ pub struct ForeignKey {
     pub foreign_column: String,
 }
 
+/// SchemaCrawler is responsible for auto-ingesting database structure.
 #[async_trait::async_trait]
 pub trait SchemaCrawler {
+    /// Crawls the database to extract tables, columns, indexes, and relationships.
     async fn crawl(&self) -> anyhow::Result<Schema>;
 }
 
