@@ -116,6 +116,15 @@ enum Commands {
     Stats,
     /// Print the version of AIQL CLI
     Version,
+    /// Verify query syntax and safety using EXPLAIN
+    Check {
+        /// SQL query to check
+        #[arg(short, long)]
+        query: String,
+        /// Database URL
+        #[arg(short, long)]
+        url: String,
+    },
 }
 
 #[tokio::main]
@@ -312,6 +321,19 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Version => {
             println!("AIQL CLI v1.0.0-ALPHA");
+        }
+        Commands::Check { query, url } => {
+            let pool = PgPoolOptions::new()
+                .max_connections(1)
+                .connect(url)
+                .await?;
+            let engine = aiql_core::execution::PostgresExecutionEngine::new(pool);
+            let ok = aiql_core::ExecutionEngine::dry_run(&engine, query).await?;
+            if ok {
+                println!("{}", "Query is valid and safe.".green().bold());
+            } else {
+                println!("{}", "Query failed validation check.".red().bold());
+            }
         }
     }
 
