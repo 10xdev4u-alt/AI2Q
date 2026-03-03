@@ -151,6 +151,8 @@ export function Sidebar({ user, collapsed, onToggle, mobileOpen, onMobileClose }
         { label: "Cron", href: "/system/cron", icon: "Calendar" },
         { label: "Mail", href: "/system/mail", icon: "Mail" },
         { label: "Security", href: "/system/security", icon: "Shield" },
+        { label: "AI Playground", href: "http://localhost:3000/playground", icon: "Zap" },
+        { label: "AI Schema", href: "http://localhost:3000/schema", icon: "Database" },
       ]
     : [];
 
