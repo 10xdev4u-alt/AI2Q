@@ -51,3 +51,86 @@ where
         Ok(result)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{QueryPlan, Translator, ExecutionEngine, QueryHealer, ExecutionResult};
+    use async_trait::async_trait;
+    use std::collections::HashMap;
+
+    struct MockTranslator;
+    #[async_trait]
+    impl Translator for MockTranslator {
+        async fn translate(&self, _prompt: &str, _schema: &Schema) -> anyhow::Result<QueryPlan> {
+            Ok(QueryPlan {
+                raw_query: "SELECT * FROM users;".to_string(),
+                explanation: "Mock query".to_string(),
+                cost: None,
+            })
+        }
+    }
+
+    struct MockEngine {
+        fail_first: bool,
+    }
+    #[async_trait]
+    impl ExecutionEngine for MockEngine {
+        async fn execute(&self, query: &str) -> anyhow::Result<ExecutionResult> {
+            if query.contains("Healed") {
+                return Ok(ExecutionResult {
+                    success: true,
+                    data: None,
+                    error: None,
+                    execution_time_ms: 10,
+                });
+            }
+            if self.fail_first {
+                return Ok(ExecutionResult {
+                    success: false,
+                    data: None,
+                    error: Some("Syntax error".to_string()),
+                    execution_time_ms: 10,
+                });
+            }
+            Ok(ExecutionResult {
+                success: true,
+                data: None,
+                error: None,
+                execution_time_ms: 10,
+            })
+        }
+        async fn dry_run(&self, _query: &str) -> anyhow::Result<bool> {
+            Ok(true)
+        }
+    }
+
+    struct MockHealer;
+    #[async_trait]
+    impl QueryHealer for MockHealer {
+        async fn heal(&self, _query: &str, _error: &str, _schema: &Schema) -> anyhow::Result<QueryPlan> {
+            Ok(QueryPlan {
+                raw_query: "Healed SELECT * FROM users;".to_string(),
+                explanation: "Healed".to_string(),
+                cost: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn test_smart_client_success() {
+        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer);
+        let schema = Schema { tables: HashMap::new() };
+        let result = client.ask("prompt", &schema).await.unwrap();
+        assert!(result.success);
+    }
+
+    #[tokio::test]
+    async fn test_smart_client_healing() {
+        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer);
+        let schema = Schema { tables: HashMap::new() };
+        let result = client.ask("prompt", &schema).await.unwrap();
+        assert!(result.success);
+        // The mock engine will succeed on the second attempt because the healed query contains "Healed"
+    }
+}
