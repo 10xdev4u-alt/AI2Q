@@ -367,6 +367,29 @@ impl Refactorer for OpenAITranslator {
 }
 
 #[async_trait]
+impl crate::DocGenerator for OpenAITranslator {
+    async fn generate_docs(&self, schema: &Schema) -> anyhow::Result<String> {
+        let schema_context = self.build_schema_context(schema, "generate documentation");
+        let system_prompt = "You are an expert technical writer. Generate a comprehensive Markdown documentation site for the database schema provided.\n\
+                             Include table descriptions, column details, and relationship diagrams (in mermaid syntax).";
+
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.model)
+            .messages([
+                ChatCompletionRequestSystemMessageArgs::default().content(system_prompt).build()?.into(),
+                ChatCompletionRequestUserMessageArgs::default().content(schema_context).build()?.into(),
+            ])
+            .build()?;
+
+        let response = self.client.chat().create(request).await?;
+        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response"))?;
+        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty content"))?;
+
+        Ok(content.clone())
+    }
+}
+
+#[async_trait]
 impl TypeGenerator for OpenAITranslator {
     async fn generate_types(&self, name: &str, plan: &QueryPlan, schema: &Schema, language: &str) -> anyhow::Result<String> {
         let system_prompt = format!(

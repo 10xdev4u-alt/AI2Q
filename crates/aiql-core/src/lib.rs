@@ -246,6 +246,13 @@ pub trait TypeGenerator {
     async fn generate_types(&self, name: &str, plan: &QueryPlan, schema: &Schema, language: &str) -> anyhow::Result<String>;
 }
 
+/// DocGenerator generates technical documentation for a database schema.
+#[async_trait::async_trait]
+pub trait DocGenerator {
+    /// Generates a Markdown documentation for the given schema.
+    async fn generate_docs(&self, schema: &Schema) -> anyhow::Result<String>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
