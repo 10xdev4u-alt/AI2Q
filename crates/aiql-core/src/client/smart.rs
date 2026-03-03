@@ -71,11 +71,17 @@ where
             TranslateResult::Plan(p) => p,
         };
 
-        log::debug!("AIQL: Generated query: {}", plan.raw_query);
+        let raw_query_with_explanation = if plan.dialect == crate::DatabaseDialect::MongoDB {
+            plan.raw_query.clone() // Don't prepend comments to JSON pipelines
+        } else {
+            format!("-- {}\n{}", plan.explanation, plan.raw_query)
+        };
+
+        log::debug!("AIQL: Generated query: {}", raw_query_with_explanation);
 
         // 4. Dry Run
         log::debug!("AIQL: Performing dry-run validation...");
-        if !self.engine.dry_run(&plan.raw_query).await? {
+        if !self.engine.dry_run(&raw_query_with_explanation).await? {
              log::warn!("AIQL: Dry run failed for generated query");
              return Ok(AskResult::Error("Dry run failed for generated query".to_string()));
         }
@@ -94,7 +100,7 @@ where
 
         // 7. Execute
         log::debug!("AIQL: Executing query...");
-        let mut result = self.engine.execute(&plan.raw_query).await?;
+        let mut result = self.engine.execute(&raw_query_with_explanation).await?;
 
         // 8. Self-Healing Loop
         if !result.success {
@@ -102,7 +108,7 @@ where
                 log::warn!("AIQL: Query failed: {}. Attempting self-healing...", error_msg);
                 
                 // 9. Heal
-                let healed_plan = self.healer.heal(&plan.raw_query, &error_msg, schema).await?;
+                let healed_plan = self.healer.heal(&raw_query_with_explanation, &error_msg, schema).await?;
                 log::info!("AIQL: Healed query: {}", healed_plan.raw_query);
                 
                 // 10. Retry
@@ -157,9 +163,15 @@ where
         // 3. Replace placeholder
         let final_query = plan.raw_query.replace("$VECTOR", &vector_str);
         
+        let final_query_with_explanation = if plan.dialect == crate::DatabaseDialect::MongoDB {
+            final_query
+        } else {
+            format!("-- {}\n{}", plan.explanation, final_query)
+        };
+
         // 4. Execute
         log::debug!("AIQL: Executing final vector query...");
-        let mut result = self.engine.execute(&final_query).await?;
+        let mut result = self.engine.execute(&final_query_with_explanation).await?;
 
         // Privacy Masking on results
         if let Some(data) = result.data {
