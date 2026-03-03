@@ -79,7 +79,7 @@ impl OpenAITranslator {
 
 #[async_trait]
 impl Translator for OpenAITranslator {
-    async fn translate(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
+    async fn translate(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
         let schema_context = self.build_schema_context(schema, prompt);
         let system_prompt = format!(
             "You are an expert SQL/NoSQL translator. Convert natural language to {} based on the schema below.\n\
@@ -93,19 +93,33 @@ impl Translator for OpenAITranslator {
             schema_context
         );
 
+        let mut messages = vec![
+            ChatCompletionRequestSystemMessageArgs::default()
+                .content(system_prompt)
+                .build()?
+                .into(),
+        ];
+
+        if let Some(sess) = session {
+            for msg in &sess.history {
+                if msg.role == "user" {
+                    messages.push(ChatCompletionRequestUserMessageArgs::default().content(&msg.content).build()?.into());
+                }
+                // Handle other roles if needed
+            }
+        }
+
+        messages.push(
+            ChatCompletionRequestUserMessageArgs::default()
+                .content(prompt)
+                .build()?
+                .into()
+        );
+
         let request = CreateChatCompletionRequestArgs::default()
             .model(&self.model)
             .temperature(self.temperature)
-            .messages([
-                ChatCompletionRequestSystemMessageArgs::default()
-                    .content(system_prompt)
-                    .build()?
-                    .into(),
-                ChatCompletionRequestUserMessageArgs::default()
-                    .content(prompt)
-                    .build()?
-                    .into(),
-            ])
+            .messages(messages)
             .response_format(async_openai::types::ResponseFormat::JsonObject)
             .build()?;
 
@@ -170,7 +184,7 @@ impl Translator for OpenAITranslator {
         })
     }
 
-    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
+    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
         let schema_context = self.build_schema_context(schema, prompt);
         let system_prompt = format!(
             "You are an expert SQL/NoSQL translator specializing in Vector Search. Convert natural language to {} with vector operators.\n\
@@ -185,19 +199,32 @@ impl Translator for OpenAITranslator {
             schema_context
         );
 
+        let mut messages = vec![
+            ChatCompletionRequestSystemMessageArgs::default()
+                .content(system_prompt)
+                .build()?
+                .into(),
+        ];
+
+        if let Some(sess) = session {
+            for msg in &sess.history {
+                if msg.role == "user" {
+                    messages.push(ChatCompletionRequestUserMessageArgs::default().content(&msg.content).build()?.into());
+                }
+            }
+        }
+
+        messages.push(
+            ChatCompletionRequestUserMessageArgs::default()
+                .content(prompt)
+                .build()?
+                .into()
+        );
+
         let request = CreateChatCompletionRequestArgs::default()
             .model(&self.model)
             .temperature(self.temperature)
-            .messages([
-                ChatCompletionRequestSystemMessageArgs::default()
-                    .content(system_prompt)
-                    .build()?
-                    .into(),
-                ChatCompletionRequestUserMessageArgs::default()
-                    .content(prompt)
-                    .build()?
-                    .into(),
-            ])
+            .messages(messages)
             .response_format(async_openai::types::ResponseFormat::JsonObject)
             .build()?;
 

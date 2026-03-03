@@ -45,17 +45,29 @@ pub trait MigrationEngine {
     async fn migrate(&self, plan: &MigrationPlan) -> anyhow::Result<()>;
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Session {
+    pub id: String,
+    pub history: Vec<ChatMessage>,
+}
+
 /// Translator is responsible for converting natural language prompts into executable database queries.
 #[async_trait::async_trait]
 pub trait Translator {
-    /// Translates a prompt into a query plan given the database schema and dialect.
-    async fn translate(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<QueryPlan>;
+    /// Translates a prompt into a query plan given the database schema, dialect, and session history.
+    async fn translate(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect, session: Option<&Session>) -> anyhow::Result<QueryPlan>;
 
     /// Translates a natural language migration prompt into a migration plan.
     async fn translate_migration(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<MigrationPlan>;
 
     /// Translates a natural language prompt into a query plan that includes vector search placeholders.
-    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<QueryPlan>;
+    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect, session: Option<&Session>) -> anyhow::Result<QueryPlan>;
 }
 
 /// QueryHealer is responsible for fixing broken or inefficient queries.

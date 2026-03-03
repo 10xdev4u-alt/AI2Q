@@ -28,7 +28,7 @@ impl OllamaTranslator {
 
 #[async_trait]
 impl Translator for OllamaTranslator {
-    async fn translate(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
+    async fn translate(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
         let schema_context = self.build_schema_context(schema);
         let system_prompt = format!(
             "You are an expert SQL/NoSQL translator. Convert natural language to {} based on the schema below.\n\
@@ -42,10 +42,19 @@ impl Translator for OllamaTranslator {
             schema_context
         );
 
-        let messages = vec![
+        let mut messages = vec![
             ChatMessage::system(system_prompt),
-            ChatMessage::user(prompt.to_string()),
         ];
+
+        if let Some(sess) = session {
+            for msg in &sess.history {
+                if msg.role == "user" {
+                    messages.push(ChatMessage::user(msg.content.clone()));
+                }
+            }
+        }
+
+        messages.push(ChatMessage::user(prompt.to_string()));
 
         let res = self.client.send_chat_messages(ChatMessageRequest::new(self.model.clone(), messages)).await?;
         let content = res.message.content;
@@ -110,7 +119,7 @@ impl Translator for OllamaTranslator {
         })
     }
 
-    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
+    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
         let schema_context = self.build_schema_context(schema);
         let system_prompt = format!(
             "You are an expert SQL/NoSQL translator specializing in Vector Search. Convert natural language to {} with vector operators.\n\
@@ -125,10 +134,19 @@ impl Translator for OllamaTranslator {
             schema_context
         );
 
-        let messages = vec![
+        let mut messages = vec![
             ChatMessage::system(system_prompt),
-            ChatMessage::user(prompt.to_string()),
         ];
+
+        if let Some(sess) = session {
+            for msg in &sess.history {
+                if msg.role == "user" {
+                    messages.push(ChatMessage::user(msg.content.clone()));
+                }
+            }
+        }
+
+        messages.push(ChatMessage::user(prompt.to_string()));
 
         let res = self.client.send_chat_messages(ChatMessageRequest::new(self.model.clone(), messages)).await?;
         let content = res.message.content;

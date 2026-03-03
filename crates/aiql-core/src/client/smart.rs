@@ -29,12 +29,12 @@ where
         }
     }
 
-    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<ExecutionResult> {
+    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<ExecutionResult> {
         log::info!("AIQL: Received prompt: '{}'", prompt);
 
         // 1. Translate
         log::debug!("AIQL: Translating prompt for {:?}...", dialect);
-        let plan = self.translator.translate(prompt, schema, dialect).await?;
+        let plan = self.translator.translate(prompt, schema, dialect, session).await?;
         log::debug!("AIQL: Generated query: {}", plan.raw_query);
 
         // 2. Dry Run
@@ -71,12 +71,12 @@ where
         Ok(result)
     }
 
-    pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<ExecutionResult> {
+    pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<ExecutionResult> {
         log::info!("AIQL: Received vector prompt: '{}'", prompt);
 
         // 1. Translate with placeholder
         log::debug!("AIQL: Translating vector prompt...");
-        let plan = self.translator.translate_vector(prompt, schema, dialect).await?;
+        let plan = self.translator.translate_vector(prompt, schema, dialect, session).await?;
         
         // 2. Generate embedding
         log::debug!("AIQL: Generating embedding...");
@@ -102,11 +102,28 @@ mod tests {
     struct MockTranslator;
     #[async_trait]
     impl Translator for MockTranslator {
-        async fn translate(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
+        async fn translate(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _session: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
             Ok(QueryPlan {
                 dialect,
                 raw_query: "SELECT * FROM users;".to_string(),
                 explanation: "Mock query".to_string(),
+                cost: None,
+            })
+        }
+
+        async fn translate_migration(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<crate::MigrationPlan> {
+            Ok(crate::MigrationPlan {
+                dialect,
+                raw_sql: "".to_string(),
+                explanation: "".to_string(),
+            })
+        }
+
+        async fn translate_vector(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _session: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
+            Ok(QueryPlan {
+                dialect,
+                raw_query: "SELECT * FROM items ORDER BY embedding <=> '$VECTOR' LIMIT 1;".to_string(),
+                explanation: "Vector query".to_string(),
                 cost: None,
             })
         }
@@ -182,7 +199,7 @@ mod tests {
     async fn test_smart_client_success() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await.unwrap();
         assert!(result.success);
     }
 
@@ -190,8 +207,27 @@ mod tests {
     async fn test_smart_client_healing() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await.unwrap();
         assert!(result.success);
+    }
+
+    #[tokio::test]
+    async fn test_smart_client_dry_run_failure() {
+        struct FailingEngine;
+        #[async_trait]
+        impl ExecutionEngine for FailingEngine {
+            async fn execute(&self, _query: &str) -> anyhow::Result<ExecutionResult> {
+                Ok(ExecutionResult { success: true, data: None, error: None, execution_time_ms: 0, timestamp: chrono::Utc::now() })
+            }
+            async fn dry_run(&self, _query: &str) -> anyhow::Result<bool> {
+                Ok(false)
+            }
+        }
+        let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer, MockEmbedder);
+        let schema = mock_schema();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap().to_string(), "Dry run failed for generated query");
     }
 
     #[tokio::test]
@@ -199,13 +235,13 @@ mod tests {
         struct VectorTranslator;
         #[async_trait]
         impl Translator for VectorTranslator {
-            async fn translate(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
+            async fn translate(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _sess: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
                 Ok(QueryPlan { dialect: d, raw_query: "".to_string(), explanation: "".to_string(), cost: None })
             }
             async fn translate_migration(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect) -> anyhow::Result<crate::MigrationPlan> {
                 Ok(crate::MigrationPlan { dialect: d, raw_sql: "".to_string(), explanation: "".to_string() })
             }
-            async fn translate_vector(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
+            async fn translate_vector(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _sess: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
                 Ok(QueryPlan { 
                     dialect: d, 
                     raw_query: "SELECT * FROM items ORDER BY embedding <=> '$VECTOR' LIMIT 1;".to_string(), 
@@ -217,7 +253,7 @@ mod tests {
 
         let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder);
         let schema = mock_schema();
-        let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres).await.unwrap();
+        let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await.unwrap();
         assert!(result.success);
     }
 }
