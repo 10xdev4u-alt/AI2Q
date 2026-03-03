@@ -1,4 +1,4 @@
-use crate::{QueryPlan, Schema, Translator, TranslateResult};
+use crate::{QueryPlan, Schema, Translator, TranslateResult, TypeGenerator, Refactorer, Advisor, MockDataGenerator, QueryHealer};
 use async_openai::{
     types::{ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs},
     Client,
@@ -41,7 +41,6 @@ impl OpenAITranslator {
             }
         }
 
-        // Include tables that are linked via foreign keys to relevant tables
         let mut to_add = Vec::new();
         for table in pruned_tables.values() {
             for fk in &table.foreign_keys {
@@ -130,20 +129,17 @@ impl Translator for OpenAITranslator {
             },
             context.now,
             match dialect {
-                crate::DatabaseDialect::Postgres => "Postgres INTERVAL syntax (e.g., NOW() - INTERVAL '1 day')",
-                crate::DatabaseDialect::MySQL => "MySQL DATE_SUB/DATE_ADD syntax",
-                crate::DatabaseDialect::SQLite => "SQLite date/strftime functions",
-                crate::DatabaseDialect::MongoDB => "MongoDB date operators ($gte, $lte with Date objects)",
+                crate::DatabaseDialect::Postgres => "Postgres INTERVAL syntax",
+                crate::DatabaseDialect::MySQL => "MySQL DATE_SUB/DATE_ADD",
+                crate::DatabaseDialect::SQLite => "SQLite date functions",
+                crate::DatabaseDialect::MongoDB => "MongoDB date operators",
                 crate::DatabaseDialect::Supabase => "Postgres INTERVAL syntax",
             },
             schema_context
         );
 
         let mut messages = vec![
-            ChatCompletionRequestSystemMessageArgs::default()
-                .content(system_prompt)
-                .build()?
-                .into(),
+            ChatCompletionRequestSystemMessageArgs::default().content(system_prompt).build()?.into(),
         ];
 
         if let Some(sess) = session {
@@ -154,12 +150,7 @@ impl Translator for OpenAITranslator {
             }
         }
 
-        messages.push(
-            ChatCompletionRequestUserMessageArgs::default()
-                .content(prompt)
-                .build()?
-                .into()
-        );
+        messages.push(ChatCompletionRequestUserMessageArgs::default().content(prompt).build()?.into());
 
         let request = CreateChatCompletionRequestArgs::default()
             .model(&self.model)
@@ -169,8 +160,8 @@ impl Translator for OpenAITranslator {
             .build()?;
 
         let response = self.client.chat().create(request).await?;
-        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response from OpenAI"))?;
-        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty response content"))?;
+        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response"))?;
+        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty response"))?;
 
         let parsed: serde_json::Value = serde_json::from_str(content)?;
         let result_type = parsed["type"].as_str().unwrap_or("plan");
@@ -182,7 +173,7 @@ impl Translator for OpenAITranslator {
                 .unwrap_or_default();
             Ok(TranslateResult::ClarificationNeeded { reason, suggestions })
         } else {
-            let raw_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query' in response"))?.to_string();
+            let raw_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query'"))?.to_string();
             let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
 
             Ok(TranslateResult::Plan(QueryPlan {
@@ -200,44 +191,30 @@ impl Translator for OpenAITranslator {
             "You are an expert database architect. Convert natural language migration requests to {} DDL.\n\
              Return ONLY a JSON object with 'sql' and 'explanation' fields.\n\n{}",
             match dialect {
-                crate::DatabaseDialect::MongoDB => "MongoDB Collection operations",
-                crate::DatabaseDialect::Postgres => "PostgreSQL",
-                crate::DatabaseDialect::MySQL => "MySQL",
-                crate::DatabaseDialect::SQLite => "SQLite",
-                crate::DatabaseDialect::Supabase => "PostgreSQL",
+                crate::DatabaseDialect::MongoDB => "MongoDB operations",
+                _ => "SQL",
             },
             schema_context
         );
 
         let request = CreateChatCompletionRequestArgs::default()
             .model(&self.model)
-            .temperature(self.temperature)
             .messages([
-                ChatCompletionRequestSystemMessageArgs::default()
-                    .content(system_prompt)
-                    .build()?
-                    .into(),
-                ChatCompletionRequestUserMessageArgs::default()
-                    .content(prompt)
-                    .build()?
-                    .into(),
+                ChatCompletionRequestSystemMessageArgs::default().content(system_prompt).build()?.into(),
+                ChatCompletionRequestUserMessageArgs::default().content(prompt).build()?.into(),
             ])
             .response_format(async_openai::types::ResponseFormat::JsonObject)
             .build()?;
 
         let response = self.client.chat().create(request).await?;
-        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response from OpenAI"))?;
-        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty response content"))?;
+        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response"))?;
+        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty content"))?;
 
         let parsed: serde_json::Value = serde_json::from_str(content)?;
-        let raw_sql = parsed["sql"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'sql' in response"))?.to_string();
+        let raw_sql = parsed["sql"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'sql'"))?.to_string();
         let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
 
-        Ok(crate::MigrationPlan {
-            dialect,
-            raw_sql,
-            explanation,
-        })
+        Ok(crate::MigrationPlan { dialect, raw_sql, explanation })
     }
 
     async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, context: &crate::Context, session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
@@ -248,93 +225,73 @@ impl Translator for OpenAITranslator {
              Use '$VECTOR' as a placeholder for the generated embedding vector.\n\
              Return ONLY a JSON object with 'query' and 'explanation' fields.\n\n{}",
             match dialect {
-                crate::DatabaseDialect::MongoDB => "MongoDB Aggregation Pipeline JSON",
-                crate::DatabaseDialect::Postgres => "PostgreSQL (with pgvector)",
-                crate::DatabaseDialect::MySQL => "MySQL (with vector extensions)",
-                crate::DatabaseDialect::SQLite => "SQLite (with vector extensions)",
-                crate::DatabaseDialect::Supabase => "PostgreSQL (with pgvector)",
+                crate::DatabaseDialect::MongoDB => "MongoDB Pipeline JSON",
+                _ => "SQL (with vector extensions)",
             },
             context.now,
             schema_context
         );
 
-        let mut messages = vec![
-            ChatCompletionRequestSystemMessageArgs::default()
-                .content(system_prompt)
-                .build()?
-                .into(),
-        ];
-
-        if let Some(sess) = session {
-            for msg in &sess.history {
-                if msg.role == "user" {
-                    messages.push(ChatCompletionRequestUserMessageArgs::default().content(&msg.content).build()?.into());
-                }
-            }
-        }
-
-        messages.push(
-            ChatCompletionRequestUserMessageArgs::default()
-                .content(prompt)
-                .build()?
-                .into()
-        );
-
-        let request = CreateChatCompletionRequestArgs::default()
-            .model(&self.model)
-            .temperature(self.temperature)
-            .messages(messages)
-            .response_format(async_openai::types::ResponseFormat::JsonObject)
-            .build()?;
-
-        let response = self.client.chat().create(request).await?;
-        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response from OpenAI"))?;
-        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty response content"))?;
-
-        let parsed: serde_json::Value = serde_json::from_str(content)?;
-        let raw_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query' in response"))?.to_string();
-        let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
-
-        Ok(TranslateResult::Plan(QueryPlan {
-            dialect,
-            raw_query,
-            explanation,
-            cost: None,
-        }))
-    }
-}
-
-#[async_trait]
-impl crate::Refactorer for OpenAITranslator {
-    async fn refactor(&self, code: &str) -> anyhow::Result<String> {
-        let system_prompt = "You are an expert code refactorer. Find manual SQL strings in the code and replace them with ai(\"natural language\") calls.\n\
-                             Return ONLY the refactored code.";
-
         let request = CreateChatCompletionRequestArgs::default()
             .model(&self.model)
             .messages([
-                ChatCompletionRequestSystemMessageArgs::default()
-                    .content(system_prompt)
-                    .build()?
-                    .into(),
-                ChatCompletionRequestUserMessageArgs::default()
-                    .content(code)
-                    .build()?
-                    .into(),
+                ChatCompletionRequestSystemMessageArgs::default().content(system_prompt).build()?.into(),
+                ChatCompletionRequestUserMessageArgs::default().content(prompt).build()?.into(),
             ])
+            .response_format(async_openai::types::ResponseFormat::JsonObject)
             .build()?;
 
         let response = self.client.chat().create(request).await?;
         let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response"))?;
         let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty content"))?;
 
-        Ok(content.clone())
+        let parsed: serde_json::Value = serde_json::from_str(content)?;
+        let raw_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query'"))?.to_string();
+        let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
+
+        Ok(TranslateResult::Plan(QueryPlan { dialect, raw_query, explanation, cost: None }))
     }
 }
+
+#[async_trait]
+impl QueryHealer for OpenAITranslator {
+    async fn heal(&self, query: &str, error: &str, schema: &Schema, dialect: crate::DatabaseDialect, context: &crate::Context) -> anyhow::Result<QueryPlan> {
+        let schema_context = self.build_schema_context(schema, query);
+        let system_prompt = format!(
+            "You are an expert SQL/NoSQL debugger. Fix the broken query below.\n\
+             Error: {}\n\
+             Current Time: {}\n\
+             Return ONLY a JSON object with 'query' and 'explanation' fields.\n\n{}",
+            error, context.now, schema_context
+        );
+
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.model)
+            .messages([
+                ChatCompletionRequestSystemMessageArgs::default().content(system_prompt).build()?.into(),
+                ChatCompletionRequestUserMessageArgs::default().content(format!("Broken Query: {}\nError: {}", query, error)).build()?.into(),
+            ])
+            .response_format(async_openai::types::ResponseFormat::JsonObject)
+            .build()?;
+
+        let response = self.client.chat().create(request).await?;
+        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response"))?;
+        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty content"))?;
+
+        let parsed: serde_json::Value = serde_json::from_str(content)?;
+        let fixed_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing query"))?.to_string();
+        let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
+
+        Ok(QueryPlan { dialect, raw_query: fixed_query, explanation, cost: None })
+    }
+}
+
+#[async_trait]
+impl Advisor for OpenAITranslator {
     async fn advise(&self, plan: &QueryPlan, schema: &Schema) -> anyhow::Result<Vec<String>> {
         let schema_context = self.build_schema_context(schema, &plan.raw_query);
         let system_prompt = format!(
-            "You are an expert database performance tuner. Analyze the query and schema below and suggest missing indexes or optimizations.\n\
+            "You are an expert database performance tuner. Analyze the query and schema and suggest optimizations.\n\
              Return ONLY a JSON object with an 'advice' field containing an array of strings.\n\n{}",
             schema_context
         );
@@ -342,14 +299,8 @@ impl crate::Refactorer for OpenAITranslator {
         let request = CreateChatCompletionRequestArgs::default()
             .model(&self.model)
             .messages([
-                ChatCompletionRequestSystemMessageArgs::default()
-                    .content(system_prompt)
-                    .build()?
-                    .into(),
-                ChatCompletionRequestUserMessageArgs::default()
-                    .content(format!("Query: {}", plan.raw_query))
-                    .build()?
-                    .into(),
+                ChatCompletionRequestSystemMessageArgs::default().content(system_prompt).build()?.into(),
+                ChatCompletionRequestUserMessageArgs::default().content(format!("Query: {}", plan.raw_query)).build()?.into(),
             ])
             .response_format(async_openai::types::ResponseFormat::JsonObject)
             .build()?;
@@ -366,76 +317,22 @@ impl crate::Refactorer for OpenAITranslator {
         Ok(advice)
     }
 }
-    async fn heal(&self, query: &str, error: &str, schema: &Schema, dialect: crate::DatabaseDialect, context: &crate::Context) -> anyhow::Result<QueryPlan> {
-        let schema_context = self.build_schema_context(schema, query);
-        let system_prompt = format!(
-            "You are an expert SQL/NoSQL debugger. Fix the broken query below for {}.\n\
-             Error: {}\n\
-             Current Time: {}\n\
-             Return ONLY a JSON object with 'query' and 'explanation' fields.\n\n{}",
-            match dialect {
-                crate::DatabaseDialect::MongoDB => "MongoDB Aggregation Pipeline JSON",
-                _ => "SQL",
-            },
-            error,
-            context.now,
-            schema_context
-        );
 
-        let request = CreateChatCompletionRequestArgs::default()
-            .model(&self.model)
-            .messages([
-                ChatCompletionRequestSystemMessageArgs::default()
-                    .content(system_prompt)
-                    .build()?
-                    .into(),
-                ChatCompletionRequestUserMessageArgs::default()
-                    .content(format!("Broken Query: {}\nError: {}", query, error))
-                    .build()?
-                    .into(),
-            ])
-            .response_format(async_openai::types::ResponseFormat::JsonObject)
-            .build()?;
-
-        let response = self.client.chat().create(request).await?;
-        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response"))?;
-        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty content"))?;
-
-        let parsed: serde_json::Value = serde_json::from_str(content)?;
-        let fixed_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing query"))?.to_string();
-        let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
-
-        Ok(QueryPlan {
-            dialect,
-            raw_query: fixed_query,
-            explanation,
-            cost: None,
-        })
-    }
-}
+#[async_trait]
+impl MockDataGenerator for OpenAITranslator {
     async fn generate_mock_data(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<Vec<String>> {
         let schema_context = self.build_schema_context(schema, prompt);
         let system_prompt = format!(
-            "You are an expert data engineer. Generate realistic synthetic data for {} based on the schema below.\n\
-             Return ONLY a JSON object with a 'queries' field containing an array of INSERT/update statements.\n\n{}",
-            match dialect {
-                crate::DatabaseDialect::MongoDB => "MongoDB",
-                _ => "SQL",
-            },
+            "You are an expert data engineer. Generate realistic synthetic data.\n\
+             Return ONLY a JSON object with a 'queries' field.\n\n{}",
             schema_context
         );
 
         let request = CreateChatCompletionRequestArgs::default()
             .model(&self.model)
             .messages([
-                ChatCompletionRequestSystemMessageArgs::default()
-                    .content(system_prompt)
-                    .build()?
-                    .into(),
-                ChatCompletionRequestUserMessageArgs::default()
-                    .content(prompt)
-                    .build()?
-                    .into(),
+                ChatCompletionRequestSystemMessageArgs::default().content(system_prompt).build()?.into(),
+                ChatCompletionRequestUserMessageArgs::default().content(prompt).build()?.into(),
             ])
             .response_format(async_openai::types::ResponseFormat::JsonObject)
             .build()?;
@@ -450,5 +347,52 @@ impl crate::Refactorer for OpenAITranslator {
             .unwrap_or_default();
 
         Ok(queries)
+    }
+}
+
+#[async_trait]
+impl Refactorer for OpenAITranslator {
+    async fn refactor(&self, code: &str) -> anyhow::Result<String> {
+        let system_prompt = "You are an expert code refactorer. Find manual SQL strings and replace them with ai(\"...\") calls.\n\
+                             Return ONLY the refactored code.";
+
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.model)
+            .messages([
+                ChatCompletionRequestSystemMessageArgs::default().content(system_prompt).build()?.into(),
+                ChatCompletionRequestUserMessageArgs::default().content(code).build()?.into(),
+            ])
+            .build()?;
+
+        let response = self.client.chat().create(request).await?;
+        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response"))?;
+        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty content"))?;
+
+        Ok(content.clone())
+    }
+}
+
+#[async_trait]
+impl TypeGenerator for OpenAITranslator {
+    async fn generate_types(&self, name: &str, plan: &QueryPlan, schema: &Schema, language: &str) -> anyhow::Result<String> {
+        let system_prompt = format!(
+            "You are an expert software architect. Generate a type-safe {} container named '{}' for the result of the query.\n\
+             Return ONLY the code.",
+            language, name
+        );
+
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.model)
+            .messages([
+                ChatCompletionRequestSystemMessageArgs::default().content(system_prompt).build()?.into(),
+                ChatCompletionRequestUserMessageArgs::default().content(format!("Query: {}\nSchema Context: {:?}", plan.raw_query, schema)).build()?.into(),
+            ])
+            .build()?;
+
+        let response = self.client.chat().create(request).await?;
+        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response"))?;
+        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty content"))?;
+
+        Ok(content.clone())
     }
 }

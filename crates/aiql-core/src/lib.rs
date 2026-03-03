@@ -237,6 +237,13 @@ pub trait Refactorer {
     async fn refactor(&self, code: &str) -> anyhow::Result<String>;
 }
 
+/// TypeGenerator generates language-specific structs/classes for query results.
+#[async_trait::async_trait]
+pub trait TypeGenerator {
+    /// Generates code for a result container based on a query plan and schema.
+    async fn generate_types(&self, name: &str, plan: &QueryPlan, schema: &Schema, language: &str) -> anyhow::Result<String>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
