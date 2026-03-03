@@ -99,9 +99,21 @@ pub extern "C" fn aiql_ask(
 }
 
 #[no_mangle]
-pub extern "C" fn aiql_free_string(s: *mut c_char) {
-    if s.is_null() { return; }
-    unsafe {
-        let _ = CString::from_raw(s);
-    }
+pub extern "C" fn aiql_generate_mock_data(
+    prompt: *const c_char,
+    schema_json: *const c_char
+) -> *mut c_char {
+    let prompt_str = unsafe { CStr::from_ptr(prompt).to_str().expect("Invalid UTF-8") };
+    let schema_json_str = unsafe { CStr::from_ptr(schema_json).to_str().expect("Invalid UTF-8") };
+
+    let schema: Schema = serde_json::from_str(schema_json_str).expect("Failed to deserialize schema");
+
+    let rt = Runtime::new().expect("Failed to create runtime");
+    let queries_json = rt.block_on(async {
+        let translator = MockTranslator; // Default to mock
+        let queries = aiql_core::MockDataGenerator::generate_mock_data(&translator, prompt_str, &schema, aiql_core::DatabaseDialect::Postgres).await.expect("Mock generation failed");
+        serde_json::to_string(&queries).expect("Failed to serialize queries")
+    });
+
+    CString::new(queries_json).unwrap().into_raw()
 }
