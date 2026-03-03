@@ -134,6 +134,7 @@ pub enum SafetyPolicy {
 pub struct Budget {
     pub max_execution_time_ms: Option<u64>,
     pub max_cost: Option<f64>,
+    pub as_of: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

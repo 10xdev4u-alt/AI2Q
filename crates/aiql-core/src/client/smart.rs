@@ -2,7 +2,7 @@ use crate::{ExecutionEngine, ExecutionResult, QueryHealer, Schema, Translator, E
 
 pub struct SmartClient<T, E, H, V, C, P, A>
 where
-    T: Translator,
+    T: Translator + Advisor,
     E: ExecutionEngine,
     H: QueryHealer,
     V: EmbeddingEngine,
@@ -21,7 +21,7 @@ where
 
 impl<T, E, H, V, C, P, A> SmartClient<T, E, H, V, C, P, A>
 where
-    T: Translator,
+    T: Translator + Advisor,
     E: ExecutionEngine,
     H: QueryHealer,
     V: EmbeddingEngine,
@@ -68,22 +68,30 @@ where
         log::debug!("AIQL: Translating prompt for {:?}...", dialect);
         let translate_result = self.translator.translate(&scrubbed_prompt, schema, dialect, &context, session).await?;
         
-        let plan = match translate_result {
+        let mut plan = match translate_result {
             TranslateResult::ClarificationNeeded { reason, suggestions } => {
                 return Ok(AskResult::ClarificationNeeded { reason, suggestions });
             }
             TranslateResult::Plan(p) => p,
         };
 
+        // 4. Historical Replay Modifier
+        if let Some(b) = budget {
+            if let Some(target_time) = b.as_of {
+                log::info!("AIQL: Applying temporal modifier for time-travel to {}", target_time);
+                plan.raw_query = crate::temporal::modifier::TemporalModifier::modify_query(&plan.raw_query, target_time, "created_at");
+            }
+        }
+
         let raw_query_with_explanation = if plan.dialect == crate::DatabaseDialect::MongoDB {
-            plan.raw_query.clone() // Don't prepend comments to JSON pipelines
+            plan.raw_query.clone()
         } else {
             format!("-- {}\n{}", plan.explanation, plan.raw_query)
         };
 
         log::debug!("AIQL: Generated query: {}", raw_query_with_explanation);
 
-        // 4. Safety Policy Check
+        // 5. Safety Policy Check
         match policy {
             crate::SafetyPolicy::ReadOnly | crate::SafetyPolicy::Strict => {
                 let destructive = ["DROP", "DELETE", "TRUNCATE", "ALTER", "GRANT", "REVOKE"];
@@ -100,14 +108,14 @@ where
             crate::SafetyPolicy::ReadWrite => {}
         }
 
-        // 5. Dry Run
+        // 6. Dry Run
         log::debug!("AIQL: Performing dry-run validation...");
         if !self.engine.dry_run(&raw_query_with_explanation).await? {
              log::warn!("AIQL: Dry run failed for generated query");
              return Ok(AskResult::Error("Dry run failed for generated query".to_string()));
         }
 
-        // 5. Budget Check
+        // 7. Budget Check
         if let Some(b) = budget {
             if let (Some(plan_cost), Some(max_cost)) = (plan.cost, b.max_cost) {
                 if plan_cost > max_cost {
@@ -116,23 +124,23 @@ where
             }
         }
 
-        // 6. Store in Cache if valid
+        // 8. Store in Cache if valid
         self.cache.set(&embedding, plan.clone()).await?;
 
-        // 7. Execute
+        // 9. Execute
         log::debug!("AIQL: Executing query...");
         let mut result = self.engine.execute(&raw_query_with_explanation).await?;
 
-        // 8. Self-Healing Loop
+        // 10. Self-Healing Loop
         if !result.success {
             if let Some(error_msg) = result.error.clone() {
                 log::warn!("AIQL: Query failed: {}. Attempting self-healing...", error_msg);
                 
-                // 9. Heal
+                // 11. Heal
                 let healed_plan = self.healer.heal(&raw_query_with_explanation, &error_msg, schema, dialect, &context).await?;
                 log::info!("AIQL: Healed query: {}", healed_plan.raw_query);
                 
-                // 10. Retry
+                // 12. Retry
                 result = self.engine.execute(&healed_plan.raw_query).await?;
                 if result.success {
                     log::info!("AIQL: Self-healing successful!");
@@ -142,12 +150,12 @@ where
             }
         }
 
-        // 11. Privacy Masking on results
+        // 13. Privacy Masking on results
         if let Some(data) = result.data {
             result.data = Some(self.privacy.mask_results(data).await?);
         }
 
-        // 12. Execution Time Check & Advice
+        // 14. Execution Time Check & Advice
         if let Some(b) = budget {
             if let Some(max_time) = b.max_execution_time_ms {
                 if result.execution_time_ms > max_time {
@@ -393,6 +401,10 @@ mod tests {
                     cost: None 
                 }))
             }
+        }
+        #[async_trait]
+        impl Advisor for VectorTranslator {
+            async fn advise(&self, _plan: &QueryPlan, _schema: &Schema) -> anyhow::Result<Vec<String>> { Ok(vec![]) }
         }
 
         let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
