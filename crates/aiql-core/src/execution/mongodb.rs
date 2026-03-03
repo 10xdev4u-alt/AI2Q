@@ -33,7 +33,8 @@ impl ExecutionEngine for MongoExecutionEngine {
         let mut results = Vec::new();
         while let Some(doc_res) = cursor.next().await {
             let doc = doc_res?;
-            results.push(serde_json::to_value(doc)?);
+            let json_val = serde_json::to_value(&doc)?;
+            results.push(json_val);
         }
 
         Ok(ExecutionResult {
