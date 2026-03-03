@@ -20,6 +20,15 @@ enum Commands {
         #[arg(short, long)]
         url: String,
     },
+    /// Translate natural language to SQL
+    Translate {
+        /// Natural language prompt
+        #[arg(short, long)]
+        prompt: String,
+        /// Database URL for schema context
+        #[arg(short, long)]
+        url: String,
+    },
 }
 
 #[tokio::main]
@@ -40,6 +49,23 @@ async fn main() -> anyhow::Result<()> {
 
             println!("{}", "Schema crawled successfully!".green().bold());
             println!("{:#?}", schema);
+        }
+        Commands::Translate { prompt, url } => {
+            println!("{}", "Crawling schema for context...".cyan());
+            let pool = PgPoolOptions::new()
+                .max_connections(1)
+                .connect(url)
+                .await?;
+            let crawler = PostgresSchemaCrawler::new(pool);
+            let schema = crawler.crawl().await?;
+
+            println!("{}", "Translating prompt...".cyan());
+            let translator = aiql_core::translator::MockTranslator;
+            let plan = aiql_core::Translator::translate(&translator, prompt, &schema).await?;
+
+            println!("{}", "Translation generated:".green().bold());
+            println!("{}: {}", "SQL".bold().blue(), plan.raw_query.yellow());
+            println!("{}: {}", "Explanation".bold().blue(), plan.explanation.dimmed());
         }
     }
 
