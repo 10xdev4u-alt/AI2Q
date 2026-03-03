@@ -432,4 +432,33 @@ mod tests {
             _ => panic!("Expected Success"),
         }
     }
+
+    #[tokio::test]
+    async fn test_smart_client_ambiguity() {
+        struct AmbiguousTranslator;
+        #[async_trait]
+        impl Translator for AmbiguousTranslator {
+            async fn translate(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _c: &crate::Context, _sess: Option<&crate::Session>, _st: bool) -> anyhow::Result<TranslateResult> {
+                Ok(TranslateResult::ClarificationNeeded { reason: "Too vague".to_string(), suggestions: vec!["Get all users".to_string()] })
+            }
+            async fn translate_migration(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect) -> anyhow::Result<crate::MigrationPlan> {
+                Ok(crate::MigrationPlan { dialect: d, raw_sql: "".to_string(), explanation: "".to_string() })
+            }
+            async fn translate_vector(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _c: &crate::Context, _sess: Option<&crate::Session>, _st: bool) -> anyhow::Result<TranslateResult> {
+                Ok(TranslateResult::Plan(QueryPlan { dialect: d, raw_query: "".to_string(), explanation: "".to_string(), cost: None }))
+            }
+        }
+        #[async_trait]
+        impl Advisor for AmbiguousTranslator {
+            async fn advise(&self, _plan: &QueryPlan, _schema: &Schema) -> anyhow::Result<Vec<String>> { Ok(vec![]) }
+        }
+
+        let client = SmartClient::new(AmbiguousTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
+        let schema = mock_schema();
+        let result = client.ask("get users", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false, None).await.unwrap();
+        match result {
+            AskResult::ClarificationNeeded { reason, .. } => assert_eq!(reason, "Too vague"),
+            _ => panic!("Expected ClarificationNeeded"),
+        }
+    }
 }
