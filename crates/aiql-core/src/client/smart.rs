@@ -1,4 +1,4 @@
-use crate::{ExecutionEngine, ExecutionResult, QueryHealer, Schema, Translator, EmbeddingEngine, SemanticCache, PrivacyGuard};
+use crate::{ExecutionEngine, ExecutionResult, QueryHealer, Schema, Translator, EmbeddingEngine, SemanticCache, PrivacyGuard, AskResult, TranslateResult};
 
 pub struct SmartClient<T, E, H, V, C, P>
 where
@@ -37,7 +37,7 @@ where
         }
     }
 
-    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>) -> anyhow::Result<ExecutionResult> {
+    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>) -> anyhow::Result<AskResult> {
         log::info!("AIQL: Received prompt: '{}'", prompt);
 
         // 1. Privacy Scrubbing
@@ -55,26 +55,34 @@ where
             if let Some(data) = result.data {
                 result.data = Some(self.privacy.mask_results(data).await?);
             }
-            return Ok(result);
+            return Ok(AskResult::Success(result));
         }
 
         // 3. Translate
         log::debug!("AIQL: Translating prompt for {:?}...", dialect);
-        let plan = self.translator.translate(&scrubbed_prompt, schema, dialect, session).await?;
+        let translate_result = self.translator.translate(&scrubbed_prompt, schema, dialect, session).await?;
+        
+        let plan = match translate_result {
+            TranslateResult::ClarificationNeeded { reason, suggestions } => {
+                return Ok(AskResult::ClarificationNeeded { reason, suggestions });
+            }
+            TranslateResult::Plan(p) => p,
+        };
+
         log::debug!("AIQL: Generated query: {}", plan.raw_query);
 
         // 4. Dry Run
         log::debug!("AIQL: Performing dry-run validation...");
         if !self.engine.dry_run(&plan.raw_query).await? {
              log::warn!("AIQL: Dry run failed for generated query");
-             return Err(anyhow::anyhow!("Dry run failed for generated query"));
+             return Ok(AskResult::Error("Dry run failed for generated query".to_string()));
         }
 
         // 5. Budget Check
         if let Some(b) = budget {
             if let (Some(plan_cost), Some(max_cost)) = (plan.cost, b.max_cost) {
                 if plan_cost > max_cost {
-                    return Err(anyhow::anyhow!("Query cost {} exceeds budget {}", plan_cost, max_cost));
+                    return Ok(AskResult::Error(format!("Query cost {} exceeds budget {}", plan_cost, max_cost)));
                 }
             }
         }
@@ -86,25 +94,16 @@ where
         log::debug!("AIQL: Executing query...");
         let mut result = self.engine.execute(&plan.raw_query).await?;
 
-        // 8. Execution Time Check
-        if let Some(b) = budget {
-            if let Some(max_time) = b.max_execution_time_ms {
-                if result.execution_time_ms > max_time {
-                    log::warn!("AIQL: Execution time {}ms exceeds budget {}ms", result.execution_time_ms, max_time);
-                }
-            }
-        }
-
-        // 7. Self-Healing Loop
+        // 8. Self-Healing Loop
         if !result.success {
             if let Some(error_msg) = result.error.clone() {
                 log::warn!("AIQL: Query failed: {}. Attempting self-healing...", error_msg);
                 
-                // 8. Heal
+                // 9. Heal
                 let healed_plan = self.healer.heal(&plan.raw_query, &error_msg, schema).await?;
                 log::info!("AIQL: Healed query: {}", healed_plan.raw_query);
                 
-                // 9. Retry
+                // 10. Retry
                 result = self.engine.execute(&healed_plan.raw_query).await?;
                 if result.success {
                     log::info!("AIQL: Self-healing successful!");
@@ -114,21 +113,37 @@ where
             }
         }
 
-        // 10. Privacy Masking on results
+        // 11. Privacy Masking on results
         if let Some(data) = result.data {
             result.data = Some(self.privacy.mask_results(data).await?);
         }
 
+        // 12. Execution Time Check
+        if let Some(b) = budget {
+            if let Some(max_time) = b.max_execution_time_ms {
+                if result.execution_time_ms > max_time {
+                    log::warn!("AIQL: Execution time {}ms exceeds budget {}ms", result.execution_time_ms, max_time);
+                }
+            }
+        }
+
         log::info!("AIQL: Request completed in {}ms", result.execution_time_ms);
-        Ok(result)
+        Ok(AskResult::Success(result))
     }
 
-    pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>) -> anyhow::Result<ExecutionResult> {
+    pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>) -> anyhow::Result<AskResult> {
         log::info!("AIQL: Received vector prompt: '{}'", prompt);
 
         // 1. Translate with placeholder
         log::debug!("AIQL: Translating vector prompt...");
-        let plan = self.translator.translate_vector(prompt, schema, dialect, session).await?;
+        let translate_result = self.translator.translate_vector(prompt, schema, dialect, session).await?;
+        
+        let plan = match translate_result {
+            TranslateResult::ClarificationNeeded { reason, suggestions } => {
+                return Ok(AskResult::ClarificationNeeded { reason, suggestions });
+            }
+            TranslateResult::Plan(p) => p,
+        };
         
         // 2. Generate embedding
         log::debug!("AIQL: Generating embedding...");
@@ -140,27 +155,34 @@ where
         
         // 4. Execute
         log::debug!("AIQL: Executing final vector query...");
-        self.engine.execute(&final_query).await
+        let mut result = self.engine.execute(&final_query).await?;
+
+        // Privacy Masking on results
+        if let Some(data) = result.data {
+            result.data = Some(self.privacy.mask_results(data).await?);
+        }
+
+        Ok(AskResult::Success(result))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{QueryPlan, Translator, ExecutionEngine, QueryHealer, ExecutionResult};
+    use crate::{QueryPlan, Translator, ExecutionEngine, QueryHealer, ExecutionResult, TranslateResult};
     use async_trait::async_trait;
     use std::collections::HashMap;
 
     struct MockTranslator;
     #[async_trait]
     impl Translator for MockTranslator {
-        async fn translate(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _session: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
-            Ok(QueryPlan {
+        async fn translate(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+            Ok(TranslateResult::Plan(QueryPlan {
                 dialect,
                 raw_query: "SELECT * FROM users;".to_string(),
                 explanation: "Mock query".to_string(),
                 cost: None,
-            })
+            }))
         }
 
         async fn translate_migration(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<crate::MigrationPlan> {
@@ -171,13 +193,13 @@ mod tests {
             })
         }
 
-        async fn translate_vector(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _session: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
-            Ok(QueryPlan {
+        async fn translate_vector(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+            Ok(TranslateResult::Plan(QueryPlan {
                 dialect,
                 raw_query: "SELECT * FROM items ORDER BY embedding <=> '$VECTOR' LIMIT 1;".to_string(),
                 explanation: "Vector query".to_string(),
                 cost: None,
-            })
+            }))
         }
     }
 
@@ -266,7 +288,10 @@ mod tests {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
         let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None).await.unwrap();
-        assert!(result.success);
+        match result {
+            AskResult::Success(_) => {},
+            _ => panic!("Expected Success"),
+        }
     }
 
     #[tokio::test]
@@ -274,7 +299,10 @@ mod tests {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
         let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None).await.unwrap();
-        assert!(result.success);
+        match result {
+            AskResult::Success(_) => {},
+            _ => panic!("Expected Success"),
+        }
     }
 
     #[tokio::test]
@@ -291,9 +319,11 @@ mod tests {
         }
         let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None).await;
-        assert!(result.is_err());
-        assert_eq!(result.err().unwrap().to_string(), "Dry run failed for generated query");
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None).await.unwrap();
+        match result {
+            AskResult::Error(e) => assert_eq!(e, "Dry run failed for generated query"),
+            _ => panic!("Expected Error"),
+        }
     }
 
     #[tokio::test]
@@ -301,25 +331,28 @@ mod tests {
         struct VectorTranslator;
         #[async_trait]
         impl Translator for VectorTranslator {
-            async fn translate(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _sess: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
-                Ok(QueryPlan { dialect: d, raw_query: "".to_string(), explanation: "".to_string(), cost: None })
+            async fn translate(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _sess: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+                Ok(TranslateResult::Plan(QueryPlan { dialect: d, raw_query: "".to_string(), explanation: "".to_string(), cost: None }))
             }
             async fn translate_migration(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect) -> anyhow::Result<crate::MigrationPlan> {
                 Ok(crate::MigrationPlan { dialect: d, raw_sql: "".to_string(), explanation: "".to_string() })
             }
-            async fn translate_vector(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _sess: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
-                Ok(QueryPlan { 
+            async fn translate_vector(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _sess: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+                Ok(TranslateResult::Plan(QueryPlan { 
                     dialect: d, 
                     raw_query: "SELECT * FROM items ORDER BY embedding <=> '$VECTOR' LIMIT 1;".to_string(), 
                     explanation: "Vector query".to_string(), 
                     cost: None 
-                })
+                }))
             }
         }
 
         let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
         let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None).await.unwrap();
-        assert!(result.success);
+        match result {
+            AskResult::Success(_) => {},
+            _ => panic!("Expected Success"),
+        }
     }
 }

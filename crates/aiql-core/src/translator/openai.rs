@@ -1,4 +1,4 @@
-use crate::{QueryPlan, Schema, Translator};
+use crate::{QueryPlan, Schema, Translator, TranslateResult};
 use async_openai::{
     types::{ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs},
     Client,
@@ -28,13 +28,12 @@ impl OpenAITranslator {
         let lowercase_prompt = prompt.to_lowercase();
         
         for (table_name, table) in &schema.tables {
-            // Context Pruning: Only include tables that appear in the prompt or have foreign keys to tables in the prompt.
             let table_keyword = table_name.to_lowercase();
             let is_relevant = lowercase_prompt.contains(&table_keyword) || 
                              table.columns.iter().any(|c| lowercase_prompt.contains(&c.name.to_lowercase()));
             
             if !is_relevant && schema.tables.len() > 10 {
-                continue; // Skip irrelevant tables for huge schemas
+                continue;
             }
 
             context.push_str(&format!("Table: {}\n", table_name));
@@ -79,11 +78,14 @@ impl OpenAITranslator {
 
 #[async_trait]
 impl Translator for OpenAITranslator {
-    async fn translate(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
+    async fn translate(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
         let schema_context = self.build_schema_context(schema, prompt);
         let system_prompt = format!(
             "You are an expert SQL/NoSQL translator. Convert natural language to {} based on the schema below.\n\
-             Return ONLY a JSON object with 'query' and 'explanation' fields.\n\n{}",
+             If the prompt is ambiguous or lacks enough information, return a clarification request.\n\
+             Return ONLY a JSON object.\n\
+             For successful translation: {{ \"type\": \"plan\", \"query\": \"...\", \"explanation\": \"...\" }}\n\
+             For ambiguity: {{ \"type\": \"clarification\", \"reason\": \"...\", \"suggestions\": [\"...\", \"...\"] }}\n\n{}",
             match dialect {
                 crate::DatabaseDialect::MongoDB => "MongoDB Aggregation Pipeline JSON",
                 crate::DatabaseDialect::Postgres => "PostgreSQL",
@@ -105,7 +107,6 @@ impl Translator for OpenAITranslator {
                 if msg.role == "user" {
                     messages.push(ChatCompletionRequestUserMessageArgs::default().content(&msg.content).build()?.into());
                 }
-                // Handle other roles if needed
             }
         }
 
@@ -128,15 +129,25 @@ impl Translator for OpenAITranslator {
         let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty response content"))?;
 
         let parsed: serde_json::Value = serde_json::from_str(content)?;
-        let raw_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query' in response"))?.to_string();
-        let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
+        let result_type = parsed["type"].as_str().unwrap_or("plan");
 
-        Ok(QueryPlan {
-            dialect,
-            raw_query,
-            explanation,
-            cost: None,
-        })
+        if result_type == "clarification" {
+            let reason = parsed["reason"].as_str().unwrap_or("Ambiguous prompt").to_string();
+            let suggestions = parsed["suggestions"].as_array()
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .unwrap_or_default();
+            Ok(TranslateResult::ClarificationNeeded { reason, suggestions })
+        } else {
+            let raw_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query' in response"))?.to_string();
+            let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
+
+            Ok(TranslateResult::Plan(QueryPlan {
+                dialect,
+                raw_query,
+                explanation,
+                cost: None,
+            }))
+        }
     }
 
     async fn translate_migration(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<crate::MigrationPlan> {
@@ -184,7 +195,7 @@ impl Translator for OpenAITranslator {
         })
     }
 
-    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
+    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
         let schema_context = self.build_schema_context(schema, prompt);
         let system_prompt = format!(
             "You are an expert SQL/NoSQL translator specializing in Vector Search. Convert natural language to {} with vector operators.\n\
@@ -236,11 +247,11 @@ impl Translator for OpenAITranslator {
         let raw_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query' in response"))?.to_string();
         let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
 
-        Ok(QueryPlan {
+        Ok(TranslateResult::Plan(QueryPlan {
             dialect,
             raw_query,
             explanation,
             cost: None,
-        })
+        }))
     }
 }

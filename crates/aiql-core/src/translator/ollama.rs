@@ -1,4 +1,4 @@
-use crate::{QueryPlan, Schema, Translator};
+use crate::{QueryPlan, Schema, Translator, TranslateResult};
 use async_trait::async_trait;
 use ollama_rs::Ollama;
 use ollama_rs::generation::chat::{ChatMessage, request::ChatMessageRequest};
@@ -28,11 +28,14 @@ impl OllamaTranslator {
 
 #[async_trait]
 impl Translator for OllamaTranslator {
-    async fn translate(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
+    async fn translate(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
         let schema_context = self.build_schema_context(schema);
         let system_prompt = format!(
             "You are an expert SQL/NoSQL translator. Convert natural language to {} based on the schema below.\n\
-             Return ONLY a JSON object with 'query' and 'explanation' fields.\n\n{}",
+             If the prompt is ambiguous, return a clarification request.\n\
+             Return ONLY a JSON object.\n\
+             For successful translation: {{ \"type\": \"plan\", \"query\": \"...\", \"explanation\": \"...\" }}\n\
+             For ambiguity: {{ \"type\": \"clarification\", \"reason\": \"...\", \"suggestions\": [\"...\", \"...\"] }}\n\n{}",
             match dialect {
                 crate::DatabaseDialect::MongoDB => "MongoDB Aggregation Pipeline JSON",
                 crate::DatabaseDialect::Postgres => "PostgreSQL",
@@ -59,7 +62,6 @@ impl Translator for OllamaTranslator {
         let res = self.client.send_chat_messages(ChatMessageRequest::new(self.model.clone(), messages)).await?;
         let content = res.message.content;
 
-        // Simple JSON extraction for Ollama models that might not support structured output perfectly
         let re = regex::Regex::new(r"\{[\s\S]*\}")?;
         let json_str = if let Some(m) = re.find(&content) {
             m.as_str()
@@ -68,15 +70,25 @@ impl Translator for OllamaTranslator {
         };
 
         let parsed: serde_json::Value = serde_json::from_str(json_str)?;
-        let raw_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query'"))?.to_string();
-        let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
+        let result_type = parsed["type"].as_str().unwrap_or("plan");
 
-        Ok(QueryPlan {
-            dialect,
-            raw_query,
-            explanation,
-            cost: None,
-        })
+        if result_type == "clarification" {
+            let reason = parsed["reason"].as_str().unwrap_or("Ambiguous prompt").to_string();
+            let suggestions = parsed["suggestions"].as_array()
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .unwrap_or_default();
+            Ok(TranslateResult::ClarificationNeeded { reason, suggestions })
+        } else {
+            let raw_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query'"))?.to_string();
+            let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
+
+            Ok(TranslateResult::Plan(QueryPlan {
+                dialect,
+                raw_query,
+                explanation,
+                cost: None,
+            }))
+        }
     }
 
     async fn translate_migration(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<crate::MigrationPlan> {
@@ -119,7 +131,7 @@ impl Translator for OllamaTranslator {
         })
     }
 
-    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<QueryPlan> {
+    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
         let schema_context = self.build_schema_context(schema);
         let system_prompt = format!(
             "You are an expert SQL/NoSQL translator specializing in Vector Search. Convert natural language to {} with vector operators.\n\
@@ -162,11 +174,11 @@ impl Translator for OllamaTranslator {
         let raw_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query'"))?.to_string();
         let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
 
-        Ok(QueryPlan {
+        Ok(TranslateResult::Plan(QueryPlan {
             dialect,
             raw_query,
             explanation,
             cost: None,
-        })
+        }))
     }
 }
