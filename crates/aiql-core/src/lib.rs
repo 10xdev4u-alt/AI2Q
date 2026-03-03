@@ -1,5 +1,6 @@
 pub mod crawlers;
 pub mod translator;
+pub mod execution;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -19,6 +20,20 @@ pub trait Translator {
 #[async_trait::async_trait]
 pub trait QueryHealer {
     async fn heal(&self, query: &str, error: &str, schema: &Schema) -> anyhow::Result<QueryPlan>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionResult {
+    pub success: bool,
+    pub data: Option<serde_json::Value>,
+    pub error: Option<String>,
+    pub execution_time_ms: u64,
+}
+
+#[async_trait::async_trait]
+pub trait ExecutionEngine {
+    async fn execute(&self, query: &str) -> anyhow::Result<ExecutionResult>;
+    async fn dry_run(&self, query: &str) -> anyhow::Result<bool>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
