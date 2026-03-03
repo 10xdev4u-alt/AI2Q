@@ -1,11 +1,11 @@
-use crate::{QueryPlan, Schema, Translator, TranslateResult, MigrationPlan};
+use crate::{QueryPlan, Schema, Translator, TranslateResult, MigrationPlan, DatabaseDialect, Context, Session};
 use async_trait::async_trait;
 
 pub struct MockTranslator;
 
 #[async_trait]
 impl Translator for MockTranslator {
-    async fn translate(&self, prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _context: &crate::Context, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+    async fn translate(&self, prompt: &str, _schema: &Schema, dialect: DatabaseDialect, _context: &Context, _session: Option<&Session>, _stream: bool) -> anyhow::Result<TranslateResult> {
         Ok(TranslateResult::Plan(QueryPlan {
             dialect,
             raw_query: format!("-- Mock query for: {}\nSELECT * FROM users LIMIT 10;", prompt),
@@ -14,7 +14,7 @@ impl Translator for MockTranslator {
         }))
     }
 
-    async fn translate_migration(&self, prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<MigrationPlan> {
+    async fn translate_migration(&self, prompt: &str, _schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<MigrationPlan> {
         Ok(MigrationPlan {
             dialect,
             raw_sql: format!("-- Mock migration for: {}\nALTER TABLE users ADD COLUMN mock_field TEXT;", prompt),
@@ -22,7 +22,7 @@ impl Translator for MockTranslator {
         })
     }
 
-    async fn translate_vector(&self, prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _context: &crate::Context, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+    async fn translate_vector(&self, prompt: &str, _schema: &Schema, dialect: DatabaseDialect, _context: &Context, _session: Option<&Session>, _stream: bool) -> anyhow::Result<TranslateResult> {
         Ok(TranslateResult::Plan(QueryPlan {
             dialect,
             raw_query: format!("-- Mock vector query for: {}\nSELECT * FROM products ORDER BY embedding <=> '$VECTOR' LIMIT 5;", prompt),

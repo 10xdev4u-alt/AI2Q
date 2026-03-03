@@ -1,4 +1,4 @@
-use crate::{QueryPlan, Schema, Translator, TranslateResult, TypeGenerator, Refactorer, Advisor, MockDataGenerator, QueryHealer};
+use crate::{QueryPlan, Schema, Translator, TranslateResult, TypeGenerator, Refactorer, Advisor, MockDataGenerator, QueryHealer, Context, Session, DatabaseDialect};
 use async_openai::{
     types::{ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs},
     Client,
@@ -110,31 +110,32 @@ impl OpenAITranslator {
 
 #[async_trait]
 impl Translator for OpenAITranslator {
-    async fn translate(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, context: &crate::Context, session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+    async fn translate(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect, context: &Context, session: Option<&Session>, stream: bool) -> anyhow::Result<TranslateResult> {
         let schema_context = self.build_schema_context(schema, prompt);
         let system_prompt = format!(
             "You are an expert SQL/NoSQL translator. Convert natural language to {} based on the schema below.\n\
              Current Time: {}\n\
              Important: Use {} for date/time math.\n\
-             If the prompt is ambiguous or lacks enough information, return a clarification request.\n\
-             Return ONLY a JSON object.\n\
-             For successful translation: {{ \"type\": \"plan\", \"query\": \"...\", \"explanation\": \"...\" }}\n\
-             For ambiguity: {{ \"type\": \"clarification\", \"reason\": \"...\", \"suggestions\": [\"...\", \"...\"] }}\n\n{}",
+             Streaming: {}\n\
+             If streaming is true, generate a cursor-based query or one suitable for large datasets.\n\
+             If the prompt is ambiguous, return a clarification request.\n\
+             Return ONLY a JSON object.\n\n{}",
             match dialect {
-                crate::DatabaseDialect::MongoDB => "MongoDB Aggregation Pipeline JSON",
-                crate::DatabaseDialect::Postgres => "PostgreSQL",
-                crate::DatabaseDialect::MySQL => "MySQL",
-                crate::DatabaseDialect::SQLite => "SQLite",
-                crate::DatabaseDialect::Supabase => "PostgreSQL (Supabase optimized)",
+                DatabaseDialect::MongoDB => "MongoDB Aggregation Pipeline JSON",
+                DatabaseDialect::Postgres => "PostgreSQL",
+                DatabaseDialect::MySQL => "MySQL",
+                DatabaseDialect::SQLite => "SQLite",
+                DatabaseDialect::Supabase => "PostgreSQL (Supabase optimized)",
             },
             context.now,
             match dialect {
-                crate::DatabaseDialect::Postgres => "Postgres INTERVAL syntax",
-                crate::DatabaseDialect::MySQL => "MySQL DATE_SUB/DATE_ADD",
-                crate::DatabaseDialect::SQLite => "SQLite date functions",
-                crate::DatabaseDialect::MongoDB => "MongoDB date operators",
-                crate::DatabaseDialect::Supabase => "Postgres INTERVAL syntax",
+                DatabaseDialect::Postgres => "Postgres INTERVAL syntax",
+                DatabaseDialect::MySQL => "MySQL DATE_SUB/DATE_ADD",
+                DatabaseDialect::SQLite => "SQLite date functions",
+                DatabaseDialect::MongoDB => "MongoDB date operators",
+                DatabaseDialect::Supabase => "Postgres INTERVAL syntax",
             },
+            stream,
             schema_context
         );
 
@@ -176,22 +177,16 @@ impl Translator for OpenAITranslator {
             let raw_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query'"))?.to_string();
             let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
 
-            Ok(TranslateResult::Plan(QueryPlan {
-                dialect,
-                raw_query,
-                explanation,
-                cost: None,
-            }))
+            Ok(TranslateResult::Plan(QueryPlan { dialect, raw_query, explanation, cost: None }))
         }
     }
 
-    async fn translate_migration(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<crate::MigrationPlan> {
+    async fn translate_migration(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<crate::MigrationPlan> {
         let schema_context = self.build_schema_context(schema, prompt);
         let system_prompt = format!(
-            "You are an expert database architect. Convert natural language migration requests to {} DDL.\n\
-             Return ONLY a JSON object with 'sql' and 'explanation' fields.\n\n{}",
+            "You are an expert database architect. Convert natural language migration requests to {} DDL.\n\n{}",
             match dialect {
-                crate::DatabaseDialect::MongoDB => "MongoDB operations",
+                DatabaseDialect::MongoDB => "MongoDB operations",
                 _ => "SQL",
             },
             schema_context
@@ -217,18 +212,19 @@ impl Translator for OpenAITranslator {
         Ok(crate::MigrationPlan { dialect, raw_sql, explanation })
     }
 
-    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, context: &crate::Context, session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect, context: &Context, session: Option<&Session>, stream: bool) -> anyhow::Result<TranslateResult> {
         let schema_context = self.build_schema_context(schema, prompt);
         let system_prompt = format!(
             "You are an expert SQL/NoSQL translator specializing in Vector Search. Convert natural language to {} with vector operators.\n\
              Current Time: {}\n\
              Use '$VECTOR' as a placeholder for the generated embedding vector.\n\
-             Return ONLY a JSON object with 'query' and 'explanation' fields.\n\n{}",
+             Streaming: {}\n\n{}",
             match dialect {
-                crate::DatabaseDialect::MongoDB => "MongoDB Pipeline JSON",
+                DatabaseDialect::MongoDB => "MongoDB Pipeline JSON",
                 _ => "SQL (with vector extensions)",
             },
             context.now,
+            stream,
             schema_context
         );
 
@@ -255,13 +251,12 @@ impl Translator for OpenAITranslator {
 
 #[async_trait]
 impl QueryHealer for OpenAITranslator {
-    async fn heal(&self, query: &str, error: &str, schema: &Schema, dialect: crate::DatabaseDialect, context: &crate::Context) -> anyhow::Result<QueryPlan> {
+    async fn heal(&self, query: &str, error: &str, schema: &Schema, dialect: DatabaseDialect, context: &Context) -> anyhow::Result<QueryPlan> {
         let schema_context = self.build_schema_context(schema, query);
         let system_prompt = format!(
             "You are an expert SQL/NoSQL debugger. Fix the broken query below.\n\
              Error: {}\n\
-             Current Time: {}\n\
-             Return ONLY a JSON object with 'query' and 'explanation' fields.\n\n{}",
+             Current Time: {}\n\n{}",
             error, context.now, schema_context
         );
 
@@ -291,8 +286,7 @@ impl Advisor for OpenAITranslator {
     async fn advise(&self, plan: &QueryPlan, schema: &Schema) -> anyhow::Result<Vec<String>> {
         let schema_context = self.build_schema_context(schema, &plan.raw_query);
         let system_prompt = format!(
-            "You are an expert database performance tuner. Analyze the query and schema and suggest optimizations.\n\
-             Return ONLY a JSON object with an 'advice' field containing an array of strings.\n\n{}",
+            "You are an expert database performance tuner. Analyze the query and schema and suggest optimizations.\n\n{}",
             schema_context
         );
 
@@ -320,11 +314,10 @@ impl Advisor for OpenAITranslator {
 
 #[async_trait]
 impl MockDataGenerator for OpenAITranslator {
-    async fn generate_mock_data(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<Vec<String>> {
+    async fn generate_mock_data(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<Vec<String>> {
         let schema_context = self.build_schema_context(schema, prompt);
         let system_prompt = format!(
-            "You are an expert data engineer. Generate realistic synthetic data.\n\
-             Return ONLY a JSON object with a 'queries' field.\n\n{}",
+            "You are an expert data engineer. Generate realistic synthetic data.\n\n{}",
             schema_context
         );
 
@@ -353,8 +346,7 @@ impl MockDataGenerator for OpenAITranslator {
 #[async_trait]
 impl Refactorer for OpenAITranslator {
     async fn refactor(&self, code: &str) -> anyhow::Result<String> {
-        let system_prompt = "You are an expert code refactorer. Find manual SQL strings and replace them with ai(\"...\") calls.\n\
-                             Return ONLY the refactored code.";
+        let system_prompt = "You are an expert code refactorer. Find manual SQL strings and replace them with ai(\"...\") calls.";
 
         let request = CreateChatCompletionRequestArgs::default()
             .model(&self.model)
@@ -376,8 +368,7 @@ impl Refactorer for OpenAITranslator {
 impl TypeGenerator for OpenAITranslator {
     async fn generate_types(&self, name: &str, plan: &QueryPlan, schema: &Schema, language: &str) -> anyhow::Result<String> {
         let system_prompt = format!(
-            "You are an expert software architect. Generate a type-safe {} container named '{}' for the result of the query.\n\
-             Return ONLY the code.",
+            "You are an expert software architect. Generate a type-safe {} container named '{}' for the result of the query.",
             language, name
         );
 

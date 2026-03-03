@@ -41,8 +41,8 @@ where
         }
     }
 
-    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>, policy: crate::SafetyPolicy) -> anyhow::Result<AskResult> {
-        log::info!("AIQL: Received prompt: '{}'", prompt);
+    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>, policy: crate::SafetyPolicy, stream: bool) -> anyhow::Result<AskResult> {
+        log::info!("AIQL: Received prompt: '{}' (stream={})", prompt, stream);
 
         let context = crate::Context { now: chrono::Utc::now() };
 
@@ -66,7 +66,7 @@ where
 
         // 3. Translate
         log::debug!("AIQL: Translating prompt for {:?}...", dialect);
-        let translate_result = self.translator.translate(&scrubbed_prompt, schema, dialect, &context, session).await?;
+        let translate_result = self.translator.translate(&scrubbed_prompt, schema, dialect, &context, session, stream).await?;
         
         let mut plan = match translate_result {
             TranslateResult::ClarificationNeeded { reason, suggestions } => {
@@ -173,14 +173,14 @@ where
         Ok(AskResult::Success(result))
     }
 
-    pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>, policy: crate::SafetyPolicy) -> anyhow::Result<AskResult> {
-        log::info!("AIQL: Received vector prompt: '{}'", prompt);
+    pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>, policy: crate::SafetyPolicy, stream: bool) -> anyhow::Result<AskResult> {
+        log::info!("AIQL: Received vector prompt: '{}' (stream={})", prompt, stream);
 
         let context = crate::Context { now: chrono::Utc::now() };
 
         // 1. Translate with placeholder
         log::debug!("AIQL: Translating vector prompt...");
-        let translate_result = self.translator.translate_vector(prompt, schema, dialect, &context, session).await?;
+        let translate_result = self.translator.translate_vector(prompt, schema, dialect, &context, session, stream).await?;
         
         let plan = match translate_result {
             TranslateResult::ClarificationNeeded { reason, suggestions } => {
@@ -343,7 +343,7 @@ mod tests {
     async fn test_smart_client_success() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false).await.unwrap();
         match result {
             AskResult::Success(_) => {},
             _ => panic!("Expected Success"),
@@ -354,7 +354,7 @@ mod tests {
     async fn test_smart_client_healing() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false).await.unwrap();
         match result {
             AskResult::Success(_) => {},
             _ => panic!("Expected Success"),
@@ -375,7 +375,7 @@ mod tests {
         }
         let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false).await.unwrap();
         match result {
             AskResult::Error(e) => assert_eq!(e, "Dry run failed for generated query"),
             _ => panic!("Expected Error"),
@@ -409,7 +409,7 @@ mod tests {
 
         let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
-        let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite).await.unwrap();
+        let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false).await.unwrap();
         match result {
             AskResult::Success(_) => {},
             _ => panic!("Expected Success"),
