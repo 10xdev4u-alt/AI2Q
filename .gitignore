@@ -1,0 +1,1 @@
+target/\n.next/\nnode_modules/\n*.log\n.env
