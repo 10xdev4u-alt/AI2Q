@@ -45,6 +45,9 @@ enum Commands {
         /// Use Ollama for local inference
         #[arg(long)]
         use_ollama: bool,
+        /// Database dialect (postgres, mysql, sqlite, mongodb, postgrest)
+        #[arg(long, default_value = "postgres")]
+        dialect: String,
     },
     /// Generate and execute a natural language migration
     Migrate {
@@ -130,7 +133,7 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", "Schema crawled successfully!".green().bold());
             println!("{:#?}", schema);
         }
-        Commands::Translate { prompt, url, openai_key, model, ollama_host, ollama_port, use_ollama } => {
+        Commands::Translate { prompt, url, openai_key, model, ollama_host, ollama_port, use_ollama, dialect } => {
             println!("{}", "Crawling schema for context...".cyan());
             let pool = PgPoolOptions::new()
                 .max_connections(1)
@@ -139,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
             let crawler = PostgresSchemaCrawler::new(pool);
             let schema = crawler.crawl().await?;
 
-            println!("{}", "Translating prompt...".cyan());
+            println!("{}", format!("Translating prompt for {}...", dialect).cyan());
             let config = if *use_ollama {
                 aiql_core::translator::TranslatorConfig::Ollama { host: ollama_host.clone(), port: *ollama_port, model: model.clone() }
             } else if let Some(key) = openai_key {
@@ -148,12 +151,28 @@ async fn main() -> anyhow::Result<()> {
                 aiql_core::translator::TranslatorConfig::Mock
             };
 
-            let translator = aiql_core::translator::create_translator(config);
-            let plan = translator.translate(prompt, &schema).await?;
+            let db_dialect = match dialect.as_str() {
+                "postgres" => aiql_core::DatabaseDialect::Postgres,
+                "mysql" => aiql_core::DatabaseDialect::MySQL,
+                "sqlite" => aiql_core::DatabaseDialect::SQLite,
+                "mongodb" => aiql_core::DatabaseDialect::MongoDB,
+                "postgrest" => aiql_core::DatabaseDialect::PostgREST,
+                _ => aiql_core::DatabaseDialect::Postgres,
+            };
 
-            println!("{}", "Translation generated:".green().bold());
-            println!("{}: {}", "SQL".bold().blue(), plan.raw_query.yellow());
-            println!("{}: {}", "Explanation".bold().blue(), plan.explanation.dimmed());
+            let translator = aiql_core::translator::create_translator(config);
+            let context = aiql_core::Context { now: chrono::Utc::now(), tenant_id: None };
+            let result = translator.translate(prompt, &schema, db_dialect, &context, None, false).await?;
+
+            if let aiql_core::TranslateResult::Plan(plan) = result {
+                println!("{}", "Translation generated:".green().bold());
+                println!("{}: {}", "QUERY".bold().blue(), plan.raw_query.yellow());
+                println!("{}: {}", "Explanation".bold().blue(), plan.explanation.dimmed());
+            } else if let aiql_core::TranslateResult::ClarificationNeeded { reason, suggestions } = result {
+                println!("{}", "Clarification Needed:".yellow().bold());
+                println!("{}", reason);
+                println!("Suggestions: {:?}", suggestions);
+            }
         }
         Commands::Migrate { prompt, url, openai_key, model, use_ollama } => {
             println!("{}", "Crawling schema for context...".cyan());
