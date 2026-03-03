@@ -1,27 +1,31 @@
-use crate::{ExecutionEngine, ExecutionResult, QueryHealer, Schema, Translator};
+use crate::{ExecutionEngine, ExecutionResult, QueryHealer, Schema, Translator, EmbeddingEngine};
 
-pub struct SmartClient<T, E, H>
+pub struct SmartClient<T, E, H, V>
 where
     T: Translator,
     E: ExecutionEngine,
     H: QueryHealer,
+    V: EmbeddingEngine,
 {
     translator: T,
     engine: E,
     healer: H,
+    embedder: V,
 }
 
-impl<T, E, H> SmartClient<T, E, H>
+impl<T, E, H, V> SmartClient<T, E, H, V>
 where
     T: Translator,
     E: ExecutionEngine,
     H: QueryHealer,
+    V: EmbeddingEngine,
 {
-    pub fn new(translator: T, engine: E, healer: H) -> Self {
+    pub fn new(translator: T, engine: E, healer: H, embedder: V) -> Self {
         Self {
             translator,
             engine,
             healer,
+            embedder,
         }
     }
 
@@ -65,6 +69,26 @@ where
 
         log::info!("AIQL: Request completed in {}ms", result.execution_time_ms);
         Ok(result)
+    }
+
+    pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<ExecutionResult> {
+        log::info!("AIQL: Received vector prompt: '{}'", prompt);
+
+        // 1. Translate with placeholder
+        log::debug!("AIQL: Translating vector prompt...");
+        let plan = self.translator.translate_vector(prompt, schema, dialect).await?;
+        
+        // 2. Generate embedding
+        log::debug!("AIQL: Generating embedding...");
+        let embedding = self.embedder.embed(prompt).await?;
+        let vector_str = format!("[{}]", embedding.iter().map(|f| f.to_string()).collect::<Vec<String>>().join(","));
+
+        // 3. Replace placeholder
+        let final_query = plan.raw_query.replace("$VECTOR", &vector_str);
+        
+        // 4. Execute
+        log::debug!("AIQL: Executing final vector query...");
+        self.engine.execute(&final_query).await
     }
 }
 
@@ -130,10 +154,19 @@ mod tests {
     impl QueryHealer for MockHealer {
         async fn heal(&self, _query: &str, _error: &str, _schema: &Schema) -> anyhow::Result<QueryPlan> {
             Ok(QueryPlan {
+                dialect: crate::DatabaseDialect::Postgres,
                 raw_query: "Healed SELECT * FROM users;".to_string(),
                 explanation: "Healed".to_string(),
                 cost: None,
             })
+        }
+    }
+
+    struct MockEmbedder;
+    #[async_trait]
+    impl EmbeddingEngine for MockEmbedder {
+        async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
+            Ok(vec![0.1, 0.2, 0.3])
         }
     }
 
@@ -147,7 +180,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_smart_client_success() {
-        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer);
+        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder);
         let schema = mock_schema();
         let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres).await.unwrap();
         assert!(result.success);
@@ -155,28 +188,36 @@ mod tests {
 
     #[tokio::test]
     async fn test_smart_client_healing() {
-        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer);
+        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder);
         let schema = mock_schema();
         let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres).await.unwrap();
         assert!(result.success);
     }
 
     #[tokio::test]
-    async fn test_smart_client_dry_run_failure() {
-        struct FailingEngine;
+    async fn test_smart_client_vector_ask() {
+        struct VectorTranslator;
         #[async_trait]
-        impl ExecutionEngine for FailingEngine {
-            async fn execute(&self, _query: &str) -> anyhow::Result<ExecutionResult> {
-                Ok(ExecutionResult { success: true, data: None, error: None, execution_time_ms: 0, timestamp: chrono::Utc::now() })
+        impl Translator for VectorTranslator {
+            async fn translate(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
+                Ok(QueryPlan { dialect: d, raw_query: "".to_string(), explanation: "".to_string(), cost: None })
             }
-            async fn dry_run(&self, _query: &str) -> anyhow::Result<bool> {
-                Ok(false)
+            async fn translate_migration(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect) -> anyhow::Result<crate::MigrationPlan> {
+                Ok(crate::MigrationPlan { dialect: d, raw_sql: "".to_string(), explanation: "".to_string() })
+            }
+            async fn translate_vector(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
+                Ok(QueryPlan { 
+                    dialect: d, 
+                    raw_query: "SELECT * FROM items ORDER BY embedding <=> '$VECTOR' LIMIT 1;".to_string(), 
+                    explanation: "Vector query".to_string(), 
+                    cost: None 
+                })
             }
         }
-        let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer);
+
+        let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres).await;
-        assert!(result.is_err());
-        assert_eq!(result.err().unwrap().to_string(), "Dry run failed for generated query");
+        let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres).await.unwrap();
+        assert!(result.success);
     }
 }

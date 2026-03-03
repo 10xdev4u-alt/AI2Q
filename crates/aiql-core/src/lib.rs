@@ -53,6 +53,9 @@ pub trait Translator {
 
     /// Translates a natural language migration prompt into a migration plan.
     async fn translate_migration(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<MigrationPlan>;
+
+    /// Translates a natural language prompt into a query plan that includes vector search placeholders.
+    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<QueryPlan>;
 }
 
 /// QueryHealer is responsible for fixing broken or inefficient queries.
