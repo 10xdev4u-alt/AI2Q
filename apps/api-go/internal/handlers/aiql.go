@@ -69,6 +69,27 @@ func Ask(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json", []byte(result))
 }
 
+type MockDataRequest struct {
+	Prompt     string `json:"prompt" binding:"required"`
+	SchemaJSON string `json:"schema_json" binding:"required"`
+}
+
+func GenerateMockData(c *gin.Context) {
+	var req MockDataRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	result, err := aiql.GenerateMockData(req.Prompt, req.SchemaJSON)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Data(http.StatusOK, "application/json", []byte(result))
+}
+
 func GetStats(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"version": "1.0.0-ALPHA",
