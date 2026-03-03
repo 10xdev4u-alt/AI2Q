@@ -1,50 +1,65 @@
-use crate::{ExecutionEngine, ExecutionResult, QueryHealer, Schema, Translator, EmbeddingEngine};
+use crate::{ExecutionEngine, ExecutionResult, QueryHealer, Schema, Translator, EmbeddingEngine, SemanticCache};
 
-pub struct SmartClient<T, E, H, V>
+pub struct SmartClient<T, E, H, V, C>
 where
     T: Translator,
     E: ExecutionEngine,
     H: QueryHealer,
     V: EmbeddingEngine,
+    C: SemanticCache,
 {
     translator: T,
     engine: E,
     healer: H,
     embedder: V,
+    cache: C,
 }
 
-impl<T, E, H, V> SmartClient<T, E, H, V>
+impl<T, E, H, V, C> SmartClient<T, E, H, V, C>
 where
     T: Translator,
     E: ExecutionEngine,
     H: QueryHealer,
     V: EmbeddingEngine,
+    C: SemanticCache,
 {
-    pub fn new(translator: T, engine: E, healer: H, embedder: V) -> Self {
+    pub fn new(translator: T, engine: E, healer: H, embedder: V, cache: C) -> Self {
         Self {
             translator,
             engine,
             healer,
             embedder,
+            cache,
         }
     }
 
     pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<ExecutionResult> {
         log::info!("AIQL: Received prompt: '{}'", prompt);
 
-        // 1. Translate
+        // 1. Semantic Cache Lookup
+        log::debug!("AIQL: Checking semantic cache...");
+        let embedding = self.embedder.embed(prompt).await?;
+        if let Some(cached_plan) = self.cache.get(&embedding).await? {
+            log::info!("AIQL: Semantic cache hit!");
+            return self.engine.execute(&cached_plan.raw_query).await;
+        }
+
+        // 2. Translate
         log::debug!("AIQL: Translating prompt for {:?}...", dialect);
         let plan = self.translator.translate(prompt, schema, dialect, session).await?;
         log::debug!("AIQL: Generated query: {}", plan.raw_query);
 
-        // 2. Dry Run
+        // 3. Dry Run
         log::debug!("AIQL: Performing dry-run validation...");
         if !self.engine.dry_run(&plan.raw_query).await? {
              log::warn!("AIQL: Dry run failed for generated query");
              return Err(anyhow::anyhow!("Dry run failed for generated query"));
         }
 
-        // 3. Execute
+        // 4. Store in Cache if valid
+        self.cache.set(&embedding, plan.clone()).await?;
+
+        // 5. Execute
         log::debug!("AIQL: Executing query...");
         let mut result = self.engine.execute(&plan.raw_query).await?;
 
@@ -187,6 +202,13 @@ mod tests {
         }
     }
 
+    struct MockCache;
+    #[async_trait]
+    impl SemanticCache for MockCache {
+        async fn get(&self, _embedding: &[f32]) -> anyhow::Result<Option<QueryPlan>> { Ok(None) }
+        async fn set(&self, _embedding: &[f32], _plan: QueryPlan) -> anyhow::Result<()> { Ok(()) }
+    }
+
     fn mock_schema() -> Schema {
         Schema {
             version: "1.0".to_string(),
@@ -197,7 +219,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_smart_client_success() {
-        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder);
+        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache);
         let schema = mock_schema();
         let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await.unwrap();
         assert!(result.success);
@@ -205,7 +227,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_smart_client_healing() {
-        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder);
+        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder, MockCache);
         let schema = mock_schema();
         let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await.unwrap();
         assert!(result.success);
@@ -223,7 +245,7 @@ mod tests {
                 Ok(false)
             }
         }
-        let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer, MockEmbedder);
+        let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer, MockEmbedder, MockCache);
         let schema = mock_schema();
         let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await;
         assert!(result.is_err());
@@ -251,7 +273,7 @@ mod tests {
             }
         }
 
-        let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder);
+        let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache);
         let schema = mock_schema();
         let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await.unwrap();
         assert!(result.success);
