@@ -100,6 +100,7 @@ pub enum TranslateResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Context {
     pub now: chrono::DateTime<chrono::Utc>,
+    pub tenant_id: Option<String>,
 }
 
 /// Translator is responsible for converting natural language prompts into executable database queries.

@@ -41,10 +41,13 @@ where
         }
     }
 
-    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>, policy: crate::SafetyPolicy, stream: bool) -> anyhow::Result<AskResult> {
-        log::info!("AIQL: Received prompt: '{}' (stream={})", prompt, stream);
+    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>, policy: crate::SafetyPolicy, stream: bool, tenant_id: Option<String>) -> anyhow::Result<AskResult> {
+        log::info!("AIQL: Received prompt: '{}' (stream={}, tenant={:?})", prompt, stream, tenant_id);
 
-        let context = crate::Context { now: chrono::Utc::now() };
+        let context = crate::Context { 
+            now: chrono::Utc::now(),
+            tenant_id,
+        };
 
         // 1. Privacy Scrubbing
         let scrubbed_prompt = self.privacy.scrub_prompt(prompt).await?;
@@ -83,6 +86,12 @@ where
             }
         }
 
+        // 5. Multi-Tenant Scoping
+        if let Some(tid) = &context.tenant_id {
+            log::info!("AIQL: Applying tenant scoping for {}", tid);
+            plan.raw_query = crate::scoping::tenant::TenantScoper::apply_scope(&plan.raw_query, tid, "tenant_id");
+        }
+
         let raw_query_with_explanation = if plan.dialect == crate::DatabaseDialect::MongoDB {
             plan.raw_query.clone()
         } else {
@@ -91,7 +100,7 @@ where
 
         log::debug!("AIQL: Generated query: {}", raw_query_with_explanation);
 
-        // 5. Safety Policy Check
+        // 6. Safety Policy Check
         match policy {
             crate::SafetyPolicy::ReadOnly | crate::SafetyPolicy::Strict => {
                 let destructive = ["DROP", "DELETE", "TRUNCATE", "ALTER", "GRANT", "REVOKE"];
@@ -108,14 +117,14 @@ where
             crate::SafetyPolicy::ReadWrite => {}
         }
 
-        // 6. Dry Run
+        // 7. Dry Run
         log::debug!("AIQL: Performing dry-run validation...");
         if !self.engine.dry_run(&raw_query_with_explanation).await? {
              log::warn!("AIQL: Dry run failed for generated query");
              return Ok(AskResult::Error("Dry run failed for generated query".to_string()));
         }
 
-        // 7. Budget Check
+        // 8. Budget Check
         if let Some(b) = budget {
             if let (Some(plan_cost), Some(max_cost)) = (plan.cost, b.max_cost) {
                 if plan_cost > max_cost {
@@ -124,23 +133,23 @@ where
             }
         }
 
-        // 8. Store in Cache if valid
+        // 9. Store in Cache if valid
         self.cache.set(&embedding, plan.clone()).await?;
 
-        // 9. Execute
+        // 10. Execute
         log::debug!("AIQL: Executing query...");
         let mut result = self.engine.execute(&raw_query_with_explanation).await?;
 
-        // 10. Self-Healing Loop
+        // 11. Self-Healing Loop
         if !result.success {
             if let Some(error_msg) = result.error.clone() {
                 log::warn!("AIQL: Query failed: {}. Attempting self-healing...", error_msg);
                 
-                // 11. Heal
+                // 12. Heal
                 let healed_plan = self.healer.heal(&raw_query_with_explanation, &error_msg, schema, dialect, &context).await?;
                 log::info!("AIQL: Healed query: {}", healed_plan.raw_query);
                 
-                // 12. Retry
+                // 13. Retry
                 result = self.engine.execute(&healed_plan.raw_query).await?;
                 if result.success {
                     log::info!("AIQL: Self-healing successful!");
@@ -150,12 +159,12 @@ where
             }
         }
 
-        // 13. Privacy Masking on results
+        // 14. Privacy Masking on results
         if let Some(data) = result.data {
             result.data = Some(self.privacy.mask_results(data).await?);
         }
 
-        // 14. Execution Time Check & Advice
+        // 15. Execution Time Check & Advice
         if let Some(b) = budget {
             if let Some(max_time) = b.max_execution_time_ms {
                 if result.execution_time_ms > max_time {
@@ -173,21 +182,29 @@ where
         Ok(AskResult::Success(result))
     }
 
-    pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>, policy: crate::SafetyPolicy, stream: bool) -> anyhow::Result<AskResult> {
-        log::info!("AIQL: Received vector prompt: '{}' (stream={})", prompt, stream);
+    pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>, policy: crate::SafetyPolicy, stream: bool, tenant_id: Option<String>) -> anyhow::Result<AskResult> {
+        log::info!("AIQL: Received vector prompt: '{}' (stream={}, tenant={:?})", prompt, stream, tenant_id);
 
-        let context = crate::Context { now: chrono::Utc::now() };
+        let context = crate::Context { 
+            now: chrono::Utc::now(),
+            tenant_id,
+        };
 
         // 1. Translate with placeholder
         log::debug!("AIQL: Translating vector prompt...");
         let translate_result = self.translator.translate_vector(prompt, schema, dialect, &context, session, stream).await?;
         
-        let plan = match translate_result {
+        let mut plan = match translate_result {
             TranslateResult::ClarificationNeeded { reason, suggestions } => {
                 return Ok(AskResult::ClarificationNeeded { reason, suggestions });
             }
             TranslateResult::Plan(p) => p,
         };
+
+        // Multi-Tenant Scoping
+        if let Some(tid) = &context.tenant_id {
+            plan.raw_query = crate::scoping::tenant::TenantScoper::apply_scope(&plan.raw_query, tid, "tenant_id");
+        }
         
         // 2. Generate embedding
         log::debug!("AIQL: Generating embedding...");
@@ -219,14 +236,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{QueryPlan, Translator, ExecutionEngine, QueryHealer, ExecutionResult, TranslateResult};
+    use crate::{QueryPlan, Translator, ExecutionEngine, QueryHealer, ExecutionResult, TranslateResult, Advisor, EmbeddingEngine, SemanticCache, PrivacyGuard, AskResult, Schema};
     use async_trait::async_trait;
     use std::collections::HashMap;
 
     struct MockTranslator;
     #[async_trait]
     impl Translator for MockTranslator {
-        async fn translate(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _context: &crate::Context, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+        async fn translate(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _context: &crate::Context, _session: Option<&crate::Session>, _stream: bool) -> anyhow::Result<TranslateResult> {
             Ok(TranslateResult::Plan(QueryPlan {
                 dialect,
                 raw_query: "SELECT * FROM users;".to_string(),
@@ -243,7 +260,7 @@ mod tests {
             })
         }
 
-        async fn translate_vector(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _context: &crate::Context, _session: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+        async fn translate_vector(&self, _prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _context: &crate::Context, _session: Option<&crate::Session>, _stream: bool) -> anyhow::Result<TranslateResult> {
             Ok(TranslateResult::Plan(QueryPlan {
                 dialect,
                 raw_query: "SELECT * FROM items ORDER BY embedding <=> '$VECTOR' LIMIT 1;".to_string(),
@@ -343,7 +360,7 @@ mod tests {
     async fn test_smart_client_success() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false, None).await.unwrap();
         match result {
             AskResult::Success(_) => {},
             _ => panic!("Expected Success"),
@@ -354,7 +371,7 @@ mod tests {
     async fn test_smart_client_healing() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false, None).await.unwrap();
         match result {
             AskResult::Success(_) => {},
             _ => panic!("Expected Success"),
@@ -375,7 +392,7 @@ mod tests {
         }
         let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false, None).await.unwrap();
         match result {
             AskResult::Error(e) => assert_eq!(e, "Dry run failed for generated query"),
             _ => panic!("Expected Error"),
@@ -387,13 +404,13 @@ mod tests {
         struct VectorTranslator;
         #[async_trait]
         impl Translator for VectorTranslator {
-            async fn translate(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _c: &crate::Context, _sess: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+            async fn translate(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _c: &crate::Context, _sess: Option<&crate::Session>, _st: bool) -> anyhow::Result<TranslateResult> {
                 Ok(TranslateResult::Plan(QueryPlan { dialect: d, raw_query: "".to_string(), explanation: "".to_string(), cost: None }))
             }
             async fn translate_migration(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect) -> anyhow::Result<crate::MigrationPlan> {
                 Ok(crate::MigrationPlan { dialect: d, raw_sql: "".to_string(), explanation: "".to_string() })
             }
-            async fn translate_vector(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _c: &crate::Context, _sess: Option<&crate::Session>) -> anyhow::Result<TranslateResult> {
+            async fn translate_vector(&self, _p: &str, _s: &Schema, d: crate::DatabaseDialect, _c: &crate::Context, _sess: Option<&crate::Session>, _st: bool) -> anyhow::Result<TranslateResult> {
                 Ok(TranslateResult::Plan(QueryPlan { 
                     dialect: d, 
                     raw_query: "SELECT * FROM items ORDER BY embedding <=> '$VECTOR' LIMIT 1;".to_string(), 
@@ -409,7 +426,7 @@ mod tests {
 
         let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy, MockAdvisor);
         let schema = mock_schema();
-        let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false).await.unwrap();
+        let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite, false, None).await.unwrap();
         match result {
             AskResult::Success(_) => {},
             _ => panic!("Expected Success"),
