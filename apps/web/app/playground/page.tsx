@@ -1,18 +1,36 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { Terminal, Send, Zap, Shield, RefreshCw, Loader2 } from "lucide-react"
+import { Terminal, Send, Zap, Shield, RefreshCw, Loader2, Braces } from "lucide-react"
 import { aiqlApi, TranslateResult, Schema } from "@/lib/aiql"
 import { Badge } from "@/components/ui/badge"
+
+const DEFAULT_SCHEMA: Schema = {
+  version: "1.0",
+  created_at: new Date().toISOString(),
+  tables: {
+    "users": {
+      name: "users",
+      columns: [
+        { name: "id", data_type: "uuid", is_primary_key: true, is_nullable: false, default_value: null, description: null },
+        { name: "email", data_type: "text", is_primary_key: false, is_nullable: false, default_value: null, description: null },
+        { name: "created_at", data_type: "timestamp", is_primary_key: false, is_nullable: false, default_value: null, description: null },
+      ],
+      foreign_keys: [],
+      indexes: []
+    }
+  }
+}
 
 export default function PlaygroundPage() {
   const [prompt, setPrompt] = useState("")
   const [dialect, setDialect] = useState("postgres")
   const [shouldExecute, setShouldExecute] = useState(false)
   const [dbUrl, setDbUrl] = useState("")
+  const [schemaJson, setSchemaJson] = useState(JSON.stringify(DEFAULT_SCHEMA, null, 2))
   const [history, setHistory] = useState<any[]>([
     { role: "system", content: "AIQL Engine v1.0.0 Online. Standing by for natural language instructions." }
   ])
@@ -24,26 +42,16 @@ export default function PlaygroundPage() {
     setHistory(prev => [...prev, { role: "user", content: prompt }])
     
     try {
-      const testSchema: Schema = {
-        version: "1.0",
-        created_at: new Date().toISOString(),
-        tables: {
-          "users": {
-            name: "users",
-            columns: [
-              { name: "id", data_type: "uuid", is_primary_key: true, is_nullable: false, default_value: null, description: null },
-              { name: "email", data_type: "text", is_primary_key: false, is_nullable: false, default_value: null, description: null },
-              { name: "created_at", data_type: "timestamp", is_primary_key: false, is_nullable: false, default_value: null, description: null },
-            ],
-            foreign_keys: [],
-            indexes: []
-          }
-        }
+      let activeSchema: Schema;
+      try {
+        activeSchema = JSON.parse(schemaJson);
+      } catch {
+        activeSchema = DEFAULT_SCHEMA;
       }
 
       if (shouldExecute) {
         if (!dbUrl) throw new Error("Database URL is required for real execution")
-        const result = await aiqlApi.ask(prompt, dbUrl, testSchema)
+        const result = await aiqlApi.ask(prompt, dbUrl, activeSchema)
         if (result.Success) {
           setHistory(prev => [...prev, { 
             role: "ai", 
@@ -59,7 +67,7 @@ export default function PlaygroundPage() {
           }])
         }
       } else {
-        const result = await aiqlApi.translate(prompt, testSchema)
+        const result = await aiqlApi.translate(prompt, activeSchema)
         if (result.type === "plan") {
           setHistory(prev => [...prev, { 
             role: "ai", 
@@ -106,7 +114,7 @@ export default function PlaygroundPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           <div className="lg:col-span-1 space-y-6">
-            <Card className="border-4 border-foreground rounded-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-primary/10">
+            <Card className="border-4 border-foreground rounded-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-primary/10 overflow-hidden">
               <CardContent className="p-4 space-y-4 text-foreground">
                 <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 text-foreground">Target Dialect</div>
                 <select 
@@ -138,23 +146,32 @@ export default function PlaygroundPage() {
                   />
                 )}
 
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground flex items-center gap-2">
+                  <Braces className="w-3 h-3" /> Schema Context
+                </div>
+                <textarea 
+                  value={schemaJson}
+                  onChange={(e) => setSchemaJson(e.target.value)}
+                  className="w-full h-48 bg-background border-2 border-foreground p-2 font-mono text-[8px] focus:ring-0 outline-none text-foreground leading-tight"
+                />
+
                 <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Engine Status</div>
-                <div className="flex items-center gap-2 font-bold text-green-600 animate-pulse">
+                <div className="flex items-center gap-2 font-bold text-green-600 animate-pulse text-xs">
                   <Zap className="w-4 h-4" /> ACTIVE
                 </div>
                 <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Security</div>
-                <div className="flex items-center gap-2 font-bold text-blue-600">
+                <div className="flex items-center gap-2 font-bold text-blue-600 text-xs">
                   <Shield className="w-4 h-4" /> PII_SCRUB_ON
                 </div>
                 <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Cache</div>
-                <div className="flex items-center gap-2 font-bold text-purple-600">
+                <div className="flex items-center gap-2 font-bold text-purple-600 text-xs">
                   <RefreshCw className="w-4 h-4" /> SEMANTIC_Ready
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          <div className="lg:col-span-3 flex flex-col h-[70vh] border-8 border-foreground shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] bg-zinc-950 overflow-hidden">
+          <div className="lg:col-span-3 flex flex-col h-[75vh] border-8 border-foreground shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] bg-zinc-950 overflow-hidden text-foreground">
             <div className="bg-foreground text-background p-2 px-4 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-black uppercase">
                 <Terminal className="w-4 h-4" /> aiql-core-debug-v1
@@ -176,7 +193,7 @@ export default function PlaygroundPage() {
                       {msg.suggestions && (
                         <div className="mt-2 flex flex-wrap gap-2">
                           {msg.suggestions.map((s: string, j: number) => (
-                            <Badge key={j} onClick={() => setPrompt(s)} className="cursor-pointer border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-none">{s}</Badge>
+                            <Badge key={j} onClick={() => setPrompt(s)} className="cursor-pointer border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-none uppercase text-[10px]">{s}</Badge>
                           ))}
                         </div>
                       )}
