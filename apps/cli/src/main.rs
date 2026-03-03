@@ -1,3 +1,5 @@
+mod tui;
+
 use aiql_core::crawlers::PostgresSchemaCrawler;
 use aiql_core::SchemaCrawler;
 use clap::{Parser, Subcommand};
@@ -76,6 +78,15 @@ enum Commands {
         /// OpenAI Model
         #[arg(long, default_value = "gpt-4-turbo-preview")]
         model: String,
+    },
+    /// Interactive debugger for AIQL translations
+    Debug {
+        /// Natural language prompt
+        #[arg(short, long)]
+        prompt: String,
+        /// Database URL
+        #[arg(short, long)]
+        url: String,
     },
 }
 
@@ -187,6 +198,22 @@ async fn main() -> anyhow::Result<()> {
                     sqlx::query(&q).execute(&pool).await?;
                 }
                 println!("{}", "Mock data inserted successfully!".green().bold());
+            }
+        }
+        Commands::Debug { prompt, url } => {
+            let pool = PgPoolOptions::new()
+                .max_connections(1)
+                .connect(url)
+                .await?;
+            let crawler = PostgresSchemaCrawler::new(pool);
+            let schema = crawler.crawl().await?;
+
+            let translator = aiql_core::translator::MockTranslator;
+            let context = aiql_core::Context { now: chrono::Utc::now() };
+            let result = aiql_core::Translator::translate(&translator, prompt, &schema, aiql_core::DatabaseDialect::Postgres, &context, None).await?;
+
+            if let aiql_core::TranslateResult::Plan(plan) = result {
+                tui::run_debugger(prompt, &plan.raw_query, &plan.explanation)?;
             }
         }
     }
