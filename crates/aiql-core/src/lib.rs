@@ -122,6 +122,14 @@ pub trait QueryHealer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub enum SafetyPolicy {
+    #[default]
+    ReadOnly,
+    ReadWrite,
+    Strict, // Only SELECT, no DDL
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Budget {
     pub max_execution_time_ms: Option<u64>,
     pub max_cost: Option<f64>,

@@ -37,7 +37,7 @@ where
         }
     }
 
-    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>) -> anyhow::Result<AskResult> {
+    pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>, policy: crate::SafetyPolicy) -> anyhow::Result<AskResult> {
         log::info!("AIQL: Received prompt: '{}'", prompt);
 
         let context = crate::Context { now: chrono::Utc::now() };
@@ -79,7 +79,24 @@ where
 
         log::debug!("AIQL: Generated query: {}", raw_query_with_explanation);
 
-        // 4. Dry Run
+        // 4. Safety Policy Check
+        match policy {
+            crate::SafetyPolicy::ReadOnly | crate::SafetyPolicy::Strict => {
+                let destructive = ["DROP", "DELETE", "TRUNCATE", "ALTER", "GRANT", "REVOKE"];
+                let upper_query = plan.raw_query.to_uppercase();
+                for cmd in destructive {
+                    if upper_query.contains(cmd) {
+                        return Ok(AskResult::Error(format!("Destructive command '{}' is not allowed under policy {:?}", cmd, policy)));
+                    }
+                }
+                if policy == crate::SafetyPolicy::Strict && !upper_query.contains("SELECT") {
+                     return Ok(AskResult::Error("Only SELECT queries are allowed under Strict policy".to_string()));
+                }
+            }
+            crate::SafetyPolicy::ReadWrite => {}
+        }
+
+        // 5. Dry Run
         log::debug!("AIQL: Performing dry-run validation...");
         if !self.engine.dry_run(&raw_query_with_explanation).await? {
              log::warn!("AIQL: Dry run failed for generated query");
@@ -139,7 +156,7 @@ where
         Ok(AskResult::Success(result))
     }
 
-    pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>) -> anyhow::Result<AskResult> {
+    pub async fn vector_ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>, budget: Option<&crate::Budget>, policy: crate::SafetyPolicy) -> anyhow::Result<AskResult> {
         log::info!("AIQL: Received vector prompt: '{}'", prompt);
 
         let context = crate::Context { now: chrono::Utc::now() };
@@ -303,7 +320,7 @@ mod tests {
     async fn test_smart_client_success() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite).await.unwrap();
         match result {
             AskResult::Success(_) => {},
             _ => panic!("Expected Success"),
@@ -314,7 +331,7 @@ mod tests {
     async fn test_smart_client_healing() {
         let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite).await.unwrap();
         match result {
             AskResult::Success(_) => {},
             _ => panic!("Expected Success"),
@@ -335,7 +352,7 @@ mod tests {
         }
         let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
-        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None).await.unwrap();
+        let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite).await.unwrap();
         match result {
             AskResult::Error(e) => assert_eq!(e, "Dry run failed for generated query"),
             _ => panic!("Expected Error"),
@@ -365,7 +382,7 @@ mod tests {
 
         let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
-        let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None).await.unwrap();
+        let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres, None, None, crate::SafetyPolicy::ReadWrite).await.unwrap();
         match result {
             AskResult::Success(_) => {},
             _ => panic!("Expected Success"),
