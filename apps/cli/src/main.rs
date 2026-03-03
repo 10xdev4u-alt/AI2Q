@@ -62,6 +62,21 @@ enum Commands {
         #[arg(long)]
         use_ollama: bool,
     },
+    /// Generate synthetic data for testing
+    Mock {
+        /// Mock data prompt
+        #[arg(short, long)]
+        prompt: String,
+        /// Database URL
+        #[arg(short, long)]
+        url: String,
+        /// OpenAI API Key
+        #[arg(long, env = "OPENAI_API_KEY")]
+        openai_key: Option<String>,
+        /// OpenAI Model
+        #[arg(long, default_value = "gpt-4-turbo-preview")]
+        model: String,
+    },
 }
 
 #[tokio::main]
@@ -141,6 +156,37 @@ async fn main() -> anyhow::Result<()> {
                 println!("{}", "Migration executed successfully!".green().bold());
             } else {
                 println!("{}", "Migration cancelled.".yellow());
+            }
+        }
+        Commands::Mock { prompt, url, openai_key, model } => {
+            println!("{}", "Crawling schema for context...".cyan());
+            let pool = PgPoolOptions::new()
+                .max_connections(1)
+                .connect(url)
+                .await?;
+            let crawler = PostgresSchemaCrawler::new(pool.clone());
+            let schema = crawler.crawl().await?;
+
+            println!("{}", "Generating mock data...".cyan());
+            let translator = aiql_core::translator::OpenAITranslator::new(
+                openai_key.clone().unwrap_or_default(),
+                model.clone()
+            );
+            
+            let queries = aiql_core::MockDataGenerator::generate_mock_data(&translator, prompt, &schema, aiql_core::DatabaseDialect::Postgres).await?;
+
+            println!("{}", "Generated Mock Queries:".green().bold());
+            for q in &queries {
+                println!("{}", q.yellow());
+            }
+
+            use dialoguer::Confirm;
+            if Confirm::new().with_prompt("Do you want to execute these mock queries?").interact()? {
+                println!("{}", "Executing mock data insertion...".cyan());
+                for q in queries {
+                    sqlx::query(&q).execute(&pool).await?;
+                }
+                println!("{}", "Mock data inserted successfully!".green().bold());
             }
         }
     }

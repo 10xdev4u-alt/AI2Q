@@ -255,3 +255,45 @@ impl Translator for OpenAITranslator {
         }))
     }
 }
+
+#[async_trait]
+impl crate::MockDataGenerator for OpenAITranslator {
+    async fn generate_mock_data(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<Vec<String>> {
+        let schema_context = self.build_schema_context(schema, prompt);
+        let system_prompt = format!(
+            "You are an expert data engineer. Generate realistic synthetic data for {} based on the schema below.\n\
+             Return ONLY a JSON object with a 'queries' field containing an array of INSERT/update statements.\n\n{}",
+            match dialect {
+                crate::DatabaseDialect::MongoDB => "MongoDB",
+                _ => "SQL",
+            },
+            schema_context
+        );
+
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.model)
+            .messages([
+                ChatCompletionRequestSystemMessageArgs::default()
+                    .content(system_prompt)
+                    .build()?
+                    .into(),
+                ChatCompletionRequestUserMessageArgs::default()
+                    .content(prompt)
+                    .build()?
+                    .into(),
+            ])
+            .response_format(async_openai::types::ResponseFormat::JsonObject)
+            .build()?;
+
+        let response = self.client.chat().create(request).await?;
+        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response"))?;
+        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty content"))?;
+
+        let parsed: serde_json::Value = serde_json::from_str(content)?;
+        let queries = parsed["queries"].as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+
+        Ok(queries)
+    }
+}

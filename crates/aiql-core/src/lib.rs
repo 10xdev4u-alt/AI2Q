@@ -194,6 +194,13 @@ pub trait RelationshipDiscoverer {
     async fn discover(&self, schema: &mut Schema) -> anyhow::Result<()>;
 }
 
+/// MockDataGenerator generates synthetic data for testing.
+#[async_trait::async_trait]
+pub trait MockDataGenerator {
+    /// Generates mock data queries based on a prompt and schema.
+    async fn generate_mock_data(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<Vec<String>>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
