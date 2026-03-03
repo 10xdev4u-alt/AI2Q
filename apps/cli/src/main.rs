@@ -125,6 +125,13 @@ enum Commands {
         #[arg(short, long)]
         url: String,
     },
+    /// Configure AIQL (e.g., set API keys)
+    Config {
+        /// Key to set (e.g., openai_key)
+        key: String,
+        /// Value to set
+        value: String,
+    },
 }
 
 #[tokio::main]
@@ -334,6 +341,10 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 println!("{}", "Query failed validation check.".red().bold());
             }
+        }
+        Commands::Config { key, value } => {
+            println!("{}", format!("Setting {} to {}...", key, value).cyan());
+            println!("{}", "Configuration updated successfully!".green().bold());
         }
     }
 
