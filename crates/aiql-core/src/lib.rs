@@ -5,9 +5,16 @@ pub mod healer;
 pub mod client;
 pub mod utils;
 pub mod migration;
+pub mod vector;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+#[async_trait::async_trait]
+pub trait EmbeddingEngine {
+    /// Generates a vector embedding for the given text.
+    async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>>;
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DatabaseDialect {
