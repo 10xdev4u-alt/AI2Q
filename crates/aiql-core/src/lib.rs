@@ -35,6 +35,7 @@ pub struct ExecutionResult {
     pub data: Option<serde_json::Value>,
     pub error: Option<String>,
     pub execution_time_ms: u64,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
 /// ExecutionEngine runs queries against a database and returns structured results.

@@ -99,6 +99,7 @@ mod tests {
                     data: None,
                     error: None,
                     execution_time_ms: 10,
+                    timestamp: chrono::Utc::now(),
                 });
             }
             if self.fail_first {
@@ -107,6 +108,7 @@ mod tests {
                     data: None,
                     error: Some("Syntax error".to_string()),
                     execution_time_ms: 10,
+                    timestamp: chrono::Utc::now(),
                 });
             }
             Ok(ExecutionResult {
@@ -114,6 +116,7 @@ mod tests {
                 data: None,
                 error: None,
                 execution_time_ms: 10,
+                timestamp: chrono::Utc::now(),
             })
         }
         async fn dry_run(&self, _query: &str) -> anyhow::Result<bool> {
@@ -163,7 +166,7 @@ mod tests {
         #[async_trait]
         impl ExecutionEngine for FailingEngine {
             async fn execute(&self, _query: &str) -> anyhow::Result<ExecutionResult> {
-                Ok(ExecutionResult { success: true, data: None, error: None, execution_time_ms: 0 })
+                Ok(ExecutionResult { success: true, data: None, error: None, execution_time_ms: 0, timestamp: chrono::Utc::now() })
             }
             async fn dry_run(&self, _query: &str) -> anyhow::Result<bool> {
                 Ok(false)

@@ -32,6 +32,7 @@ impl ExecutionEngine for PostgresExecutionEngine {
                     data: None, // Simplified for now
                     error: None,
                     execution_time_ms,
+                    timestamp: chrono::Utc::now(),
                 })
             }
             Err(e) => {
@@ -40,6 +41,7 @@ impl ExecutionEngine for PostgresExecutionEngine {
                     data: None,
                     error: Some(e.to_string()),
                     execution_time_ms,
+                    timestamp: chrono::Utc::now(),
                 })
             }
         }
