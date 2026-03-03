@@ -1,4 +1,5 @@
 pub mod crawlers;
+pub mod translator;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
