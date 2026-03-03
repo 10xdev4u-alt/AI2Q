@@ -8,6 +8,7 @@ import { Terminal, Send, Zap, Shield, RefreshCw } from "lucide-react"
 
 export default function PlaygroundPage() {
   const [prompt, setPrompt] = useState("")
+  const [dialect, setDialect] = useState("postgres")
   const [history, setHistory] = useState([
     { role: "system", content: "AIQL Engine v1.0.0 Online. Standing by for natural language instructions." }
   ])
@@ -18,20 +19,30 @@ export default function PlaygroundPage() {
     setIsQuerying(true)
     setHistory(prev => [...prev, { role: "user", content: prompt }])
     
-    // Simulate AIQL Core response
+    // Simulate AIQL Core response based on dialect
     setTimeout(() => {
-      setHistory(prev => [...prev, { 
-        role: "ai", 
-        content: `SELECT * FROM users WHERE created_at >= NOW() - INTERVAL '7 days' LIMIT 10;`,
-        explanation: "Filtering users who signed up in the last week."
-      }])
+      let content = ""
+      let explanation = ""
+
+      if (dialect === "postgres") {
+        content = "SELECT * FROM users WHERE created_at >= NOW() - INTERVAL '7 days' LIMIT 10;"
+        explanation = "Filtering users who signed up in the last week using Postgres INTERVAL."
+      } else if (dialect === "mongodb") {
+        content = "db.users.find({ created_at: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } }).limit(10)"
+        explanation = "MongoDB find query with date calculation."
+      } else if (dialect === "postgrest") {
+        content = "const { data, error } = await supabase\\n  .from('users')\\n  .select('*')\\n  .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())\\n  .limit(10)"
+        explanation = "Supabase-js client code generation."
+      }
+
+      setHistory(prev => [...prev, { role: "ai", content, explanation }])
       setIsQuerying(false)
       setPrompt("")
     }, 1500)
   }
 
   return (
-    <div className="min-h-screen bg-background p-8 font-mono">
+    <div className="min-h-screen bg-background p-8 font-mono text-foreground">
       <div className="max-w-5xl mx-auto space-y-8">
         <div className="border-b-8 border-foreground pb-6">
           <h1 className="text-5xl font-black uppercase tracking-tighter">Brutalist Playground</h1>
@@ -39,11 +50,21 @@ export default function PlaygroundPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* Sidebar - Engine Stats */}
           <div className="lg:col-span-1 space-y-6">
             <Card className="border-4 border-foreground rounded-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-primary/10">
               <CardContent className="p-4 space-y-4">
-                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2">Engine Status</div>
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2">Target Dialect</div>
+                <select 
+                  value={dialect} 
+                  onChange={(e) => setDialect(e.target.value)}
+                  className="w-full bg-background border-2 border-foreground p-2 font-black text-xs uppercase focus:ring-0 outline-none"
+                >
+                  <option value="postgres">Postgres (SQL)</option>
+                  <option value="mongodb">MongoDB (MQL)</option>
+                  <option value="postgrest">Supabase (JS)</option>
+                </select>
+
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2">Engine Status</div>
                 <div className="flex items-center gap-2 font-bold text-green-600 animate-pulse">
                   <Zap className="w-4 h-4" /> ACTIVE
                 </div>
@@ -53,13 +74,12 @@ export default function PlaygroundPage() {
                 </div>
                 <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2">Cache</div>
                 <div className="flex items-center gap-2 font-bold text-purple-600">
-                  <RefreshCw className="w-4 h-4" /> SEMANTIC_HIT_Ready
+                  <RefreshCw className="w-4 h-4" /> SEMANTIC_Ready
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Main Terminal */}
           <div className="lg:col-span-3 flex flex-col h-[70vh] border-8 border-foreground shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] bg-zinc-950 overflow-hidden">
             <div className="bg-foreground text-background p-2 px-4 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-black uppercase">
