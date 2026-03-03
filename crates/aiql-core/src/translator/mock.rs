@@ -13,4 +13,12 @@ impl Translator for MockTranslator {
             cost: Some(0.0),
         })
     }
+
+    async fn translate_migration(&self, prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<MigrationPlan> {
+        Ok(MigrationPlan {
+            dialect,
+            raw_sql: format!("-- Mock migration for: {}\nALTER TABLE users ADD COLUMN mock_field TEXT;", prompt),
+            explanation: format!("This is a mock migration for '{}'.", prompt),
+        })
+    }
 }

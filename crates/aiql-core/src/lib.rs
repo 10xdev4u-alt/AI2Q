@@ -43,6 +43,9 @@ pub trait MigrationEngine {
 pub trait Translator {
     /// Translates a prompt into a query plan given the database schema and dialect.
     async fn translate(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<QueryPlan>;
+
+    /// Translates a natural language migration prompt into a migration plan.
+    async fn translate_migration(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<MigrationPlan>;
 }
 
 /// QueryHealer is responsible for fixing broken or inefficient queries.

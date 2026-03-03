@@ -124,4 +124,49 @@ impl Translator for OpenAITranslator {
             cost: None,
         })
     }
+
+    async fn translate_migration(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<crate::MigrationPlan> {
+        let schema_context = self.build_schema_context(schema, prompt);
+        let system_prompt = format!(
+            "You are an expert database architect. Convert natural language migration requests to {} DDL.\n\
+             Return ONLY a JSON object with 'sql' and 'explanation' fields.\n\n{}",
+            match dialect {
+                crate::DatabaseDialect::MongoDB => "MongoDB Collection operations",
+                crate::DatabaseDialect::Postgres => "PostgreSQL",
+                crate::DatabaseDialect::MySQL => "MySQL",
+                crate::DatabaseDialect::SQLite => "SQLite",
+            },
+            schema_context
+        );
+
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.model)
+            .temperature(self.temperature)
+            .messages([
+                ChatCompletionRequestSystemMessageArgs::default()
+                    .content(system_prompt)
+                    .build()?
+                    .into(),
+                ChatCompletionRequestUserMessageArgs::default()
+                    .content(prompt)
+                    .build()?
+                    .into(),
+            ])
+            .response_format(async_openai::types::ResponseFormat::JsonObject)
+            .build()?;
+
+        let response = self.client.chat().create(request).await?;
+        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response from OpenAI"))?;
+        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty response content"))?;
+
+        let parsed: serde_json::Value = serde_json::from_str(content)?;
+        let raw_sql = parsed["sql"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'sql' in response"))?.to_string();
+        let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
+
+        Ok(crate::MigrationPlan {
+            dialect,
+            raw_sql,
+            explanation,
+        })
+    }
 }
