@@ -55,13 +55,14 @@ We are committed to building the most robust AI Query Layer. Our journey to 200+
     - [x] Postgres Schema Crawler (PK/FK/Index detection).
     - [x] C-FFI, Go, and Python bindings.
     - [x] CLI basic interface.
-    - [ ] Unit testing suite for core crawlers.
-- [ ] **Phase 2: Intelligence Layer (Commits 51-100)**
-    - [ ] `aiql-translator`: Llama-3/GPT-4 integration.
-    - [ ] `aiql-healer`: Automated error correction loop.
-    - [ ] Dry-run validation using `EXPLAIN`.
-    - [ ] Context pruning for massive schemas.
-- [ ] **Phase 3: Cross-DB & Advanced Flows (Commits 101-150)**
+    - [x] Unit testing suite for core crawlers.
+- [x] **Phase 2: Intelligence Layer (Commits 51-100)**
+    - [x] `aiql-translator`: OpenAI & Ollama (Local-first) integration.
+    - [x] `aiql-healer`: Automated error correction loop.
+    - [x] Dry-run validation using `EXPLAIN` and `explain()`.
+    - [x] Context pruning for massive schemas.
+    - [x] MongoDB (MQL) Crawler and Execution Engine.
+- [ ] **Phase 3: Advanced Flows & Production (Commits 101-150)**
     - [ ] MongoDB (MQL) and Supabase adapters.
     - [ ] Vector-Integrated Queries (pgvector).
     - [ ] Multi-turn "Chat-with-DB" session management.
