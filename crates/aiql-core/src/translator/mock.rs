@@ -21,4 +21,13 @@ impl Translator for MockTranslator {
             explanation: format!("This is a mock migration for '{}'.", prompt),
         })
     }
+
+    async fn translate_vector(&self, prompt: &str, _schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
+        Ok(QueryPlan {
+            dialect,
+            raw_query: format!("-- Mock vector query for: {}\nSELECT * FROM products ORDER BY embedding <=> '$VECTOR' LIMIT 5;", prompt),
+            explanation: format!("This is a mock vector search for '{}'.", prompt),
+            cost: Some(0.0),
+        })
+    }
 }

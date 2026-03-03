@@ -109,4 +109,46 @@ impl Translator for OllamaTranslator {
             explanation,
         })
     }
+
+    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
+        let schema_context = self.build_schema_context(schema);
+        let system_prompt = format!(
+            "You are an expert SQL/NoSQL translator specializing in Vector Search. Convert natural language to {} with vector operators.\n\
+             Use '$VECTOR' as a placeholder for the generated embedding vector.\n\
+             Return ONLY a JSON object with 'query' and 'explanation' fields.\n\n{}",
+            match dialect {
+                crate::DatabaseDialect::MongoDB => "MongoDB Aggregation Pipeline JSON",
+                crate::DatabaseDialect::Postgres => "PostgreSQL (with pgvector)",
+                crate::DatabaseDialect::MySQL => "MySQL (with vector extensions)",
+                crate::DatabaseDialect::SQLite => "SQLite (with vector extensions)",
+            },
+            schema_context
+        );
+
+        let messages = vec![
+            ChatMessage::system(system_prompt),
+            ChatMessage::user(prompt.to_string()),
+        ];
+
+        let res = self.client.send_chat_messages(ChatMessageRequest::new(self.model.clone(), messages)).await?;
+        let content = res.message.content;
+
+        let re = regex::Regex::new(r"\{[\s\S]*\}")?;
+        let json_str = if let Some(m) = re.find(&content) {
+            m.as_str()
+        } else {
+            return Err(anyhow::anyhow!("Failed to find JSON in Ollama response"));
+        };
+
+        let parsed: serde_json::Value = serde_json::from_str(json_str)?;
+        let raw_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query'"))?.to_string();
+        let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
+
+        Ok(QueryPlan {
+            dialect,
+            raw_query,
+            explanation,
+            cost: None,
+        })
+    }
 }

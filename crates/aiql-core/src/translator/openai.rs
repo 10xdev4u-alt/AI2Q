@@ -169,4 +169,51 @@ impl Translator for OpenAITranslator {
             explanation,
         })
     }
+
+    async fn translate_vector(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<QueryPlan> {
+        let schema_context = self.build_schema_context(schema, prompt);
+        let system_prompt = format!(
+            "You are an expert SQL/NoSQL translator specializing in Vector Search. Convert natural language to {} with vector operators.\n\
+             Use '$VECTOR' as a placeholder for the generated embedding vector.\n\
+             Return ONLY a JSON object with 'query' and 'explanation' fields.\n\n{}",
+            match dialect {
+                crate::DatabaseDialect::MongoDB => "MongoDB Aggregation Pipeline JSON",
+                crate::DatabaseDialect::Postgres => "PostgreSQL (with pgvector)",
+                crate::DatabaseDialect::MySQL => "MySQL (with vector extensions)",
+                crate::DatabaseDialect::SQLite => "SQLite (with vector extensions)",
+            },
+            schema_context
+        );
+
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.model)
+            .temperature(self.temperature)
+            .messages([
+                ChatCompletionRequestSystemMessageArgs::default()
+                    .content(system_prompt)
+                    .build()?
+                    .into(),
+                ChatCompletionRequestUserMessageArgs::default()
+                    .content(prompt)
+                    .build()?
+                    .into(),
+            ])
+            .response_format(async_openai::types::ResponseFormat::JsonObject)
+            .build()?;
+
+        let response = self.client.chat().create(request).await?;
+        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response from OpenAI"))?;
+        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty response content"))?;
+
+        let parsed: serde_json::Value = serde_json::from_str(content)?;
+        let raw_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing 'query' in response"))?.to_string();
+        let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
+
+        Ok(QueryPlan {
+            dialect,
+            raw_query,
+            explanation,
+            cost: None,
+        })
+    }
 }
