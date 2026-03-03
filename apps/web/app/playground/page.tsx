@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge"
 export default function PlaygroundPage() {
   const [prompt, setPrompt] = useState("")
   const [dialect, setDialect] = useState("postgres")
+  const [shouldExecute, setShouldExecute] = useState(false)
+  const [dbUrl, setDbUrl] = useState("")
   const [history, setHistory] = useState<any[]>([
     { role: "system", content: "AIQL Engine v1.0.0 Online. Standing by for natural language instructions." }
   ])
@@ -22,7 +24,6 @@ export default function PlaygroundPage() {
     setHistory(prev => [...prev, { role: "user", content: prompt }])
     
     try {
-      // Small test schema
       const testSchema: Schema = {
         version: "1.0",
         created_at: new Date().toISOString(),
@@ -40,20 +41,38 @@ export default function PlaygroundPage() {
         }
       }
 
-      const result = await aiqlApi.translate(prompt, testSchema)
-      
-      if (result.type === "plan") {
-        setHistory(prev => [...prev, { 
-          role: "ai", 
-          content: result.raw_query,
-          explanation: result.explanation 
-        }])
+      if (shouldExecute) {
+        if (!dbUrl) throw new Error("Database URL is required for real execution")
+        const result = await aiqlApi.ask(prompt, dbUrl, testSchema)
+        if (result.Success) {
+          setHistory(prev => [...prev, { 
+            role: "ai", 
+            content: `Execution Successful!\nTime: ${result.Success.execution_time_ms}ms\nData: ${JSON.stringify(result.Success.data, null, 2)}`
+          }])
+        } else if (result.Error) {
+          setHistory(prev => [...prev, { role: "system", content: `Execution Error: ${result.Error}` }])
+        } else if (result.ClarificationNeeded) {
+          setHistory(prev => [...prev, { 
+            role: "system", 
+            content: `Clarification Needed: ${result.ClarificationNeeded.reason}`,
+            suggestions: result.ClarificationNeeded.suggestions
+          }])
+        }
       } else {
-        setHistory(prev => [...prev, { 
-          role: "system", 
-          content: `Clarification Needed: ${result.reason}`,
-          suggestions: result.suggestions
-        }])
+        const result = await aiqlApi.translate(prompt, testSchema)
+        if (result.type === "plan") {
+          setHistory(prev => [...prev, { 
+            role: "ai", 
+            content: result.raw_query,
+            explanation: result.explanation 
+          }])
+        } else {
+          setHistory(prev => [...prev, { 
+            role: "system", 
+            content: `Clarification Needed: ${result.reason}`,
+            suggestions: result.suggestions
+          }])
+        }
       }
     } catch (err: any) {
       setHistory(prev => [...prev, { role: "system", content: `Error: ${err.response?.data?.error || err.message}` }])
@@ -99,6 +118,25 @@ export default function PlaygroundPage() {
                   <option value="mongodb">MongoDB (MQL)</option>
                   <option value="postgrest">Supabase (JS)</option>
                 </select>
+
+                <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Execution Mode</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase">Real Execute</span>
+                  <input 
+                    type="checkbox" 
+                    checked={shouldExecute} 
+                    onChange={(e) => setShouldExecute(e.target.checked)}
+                    className="w-4 h-4 border-2 border-foreground rounded-none accent-primary"
+                  />
+                </div>
+                {shouldExecute && (
+                  <Input 
+                    value={dbUrl}
+                    onChange={(e) => setDbUrl(e.target.value)}
+                    placeholder="DB URL..."
+                    className="h-8 border-2 border-foreground rounded-none text-[10px] font-bold bg-background text-foreground"
+                  />
+                )}
 
                 <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Engine Status</div>
                 <div className="flex items-center gap-2 font-bold text-green-600 animate-pulse">
