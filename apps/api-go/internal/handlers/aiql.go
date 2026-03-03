@@ -25,3 +25,24 @@ func CrawlSchema(c *gin.Context) {
 
 	c.Data(http.StatusOK, "application/json", []byte(schema))
 }
+
+type TranslateRequest struct {
+	Prompt     string `json:"prompt" binding:"required"`
+	SchemaJSON string `json:"schema_json" binding:"required"`
+}
+
+func Translate(c *gin.Context) {
+	var req TranslateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	result, err := aiql.Translate(req.Prompt, req.SchemaJSON)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Data(http.StatusOK, "application/json", []byte(result))
+}

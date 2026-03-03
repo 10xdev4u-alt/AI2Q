@@ -201,6 +201,7 @@ func Setup(db *gorm.DB, cfg *config.Config, svc *Services) *gin.Engine {
 	aiql := r.Group("/api/aiql")
 	{
 		aiql.POST("/crawl", handlers.CrawlSchema)
+		aiql.POST("/translate", handlers.Translate)
 	}
 
 	// Public auth routes
