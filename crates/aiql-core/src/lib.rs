@@ -6,9 +6,18 @@ pub mod client;
 pub mod utils;
 pub mod migration;
 pub mod vector;
+pub mod cache;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+#[async_trait::async_trait]
+pub trait SemanticCache {
+    /// Tries to find a cached query plan based on prompt embedding.
+    async fn get(&self, embedding: &[f32]) -> anyhow::Result<Option<QueryPlan>>;
+    /// Stores a query plan in the cache with its associated embedding.
+    async fn set(&self, embedding: &[f32], plan: QueryPlan) -> anyhow::Result<()>;
+}
 
 #[async_trait::async_trait]
 pub trait EmbeddingEngine {
