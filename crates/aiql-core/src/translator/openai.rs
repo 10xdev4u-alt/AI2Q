@@ -22,12 +22,38 @@ impl OpenAITranslator {
         for (table_name, table) in &schema.tables {
             context.push_str(&format!("Table: {}\n", table_name));
             for col in &table.columns {
+                let pk = if col.is_primary_key { " (PK)" } else { "" };
+                let nullable = if col.is_nullable { "" } else { " NOT NULL" };
                 context.push_str(&format!(
-                    "  - {} ({}){}\n",
+                    "  - {} {} {}{}\n",
                     col.name,
                     col.data_type,
-                    if col.is_primary_key { " PK" } else { "" }
+                    nullable,
+                    pk
                 ));
+            }
+            if !table.foreign_keys.is_empty() {
+                context.push_str("  Foreign Keys:\n");
+                for fk in &table.foreign_keys {
+                    context.push_str(&format!(
+                        "    - {} references {}({})\n",
+                        fk.column_name,
+                        fk.foreign_table,
+                        fk.foreign_column
+                    ));
+                }
+            }
+            if !table.indexes.is_empty() {
+                context.push_str("  Indexes:\n");
+                for idx in &table.indexes {
+                    let unique = if idx.is_unique { " (UNIQUE)" } else { "" };
+                    context.push_str(&format!(
+                        "    - {} on ({}){}\n",
+                        idx.name,
+                        idx.columns.join(", "),
+                        unique
+                    ));
+                }
             }
         }
         context
