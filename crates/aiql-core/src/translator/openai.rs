@@ -43,7 +43,29 @@ impl OpenAITranslator {
                     pk
                 ));
             }
-            // ... (FK and Index code)
+            if !table.foreign_keys.is_empty() {
+                context.push_str("  Foreign Keys:\n");
+                for fk in &table.foreign_keys {
+                    context.push_str(&format!(
+                        "    - {} references {}({})\n",
+                        fk.column_name,
+                        fk.foreign_table,
+                        fk.foreign_column
+                    ));
+                }
+            }
+            if !table.indexes.is_empty() {
+                context.push_str("  Indexes:\n");
+                for idx in &table.indexes {
+                    let unique = if idx.is_unique { " (UNIQUE)" } else { "" };
+                    context.push_str(&format!(
+                        "    - {} on ({}){}\n",
+                        idx.name,
+                        idx.columns.join(", "),
+                        unique
+                    ));
+                }
+            }
         }
         context
     }
