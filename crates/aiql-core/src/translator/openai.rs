@@ -83,6 +83,7 @@ impl Translator for OpenAITranslator {
         let system_prompt = format!(
             "You are an expert SQL/NoSQL translator. Convert natural language to {} based on the schema below.\n\
              Current Time: {}\n\
+             Important: Use {} for date/time math.\n\
              If the prompt is ambiguous or lacks enough information, return a clarification request.\n\
              Return ONLY a JSON object.\n\
              For successful translation: {{ \"type\": \"plan\", \"query\": \"...\", \"explanation\": \"...\" }}\n\
@@ -94,6 +95,12 @@ impl Translator for OpenAITranslator {
                 crate::DatabaseDialect::SQLite => "SQLite",
             },
             context.now,
+            match dialect {
+                crate::DatabaseDialect::Postgres => "Postgres INTERVAL syntax (e.g., NOW() - INTERVAL '1 day')",
+                crate::DatabaseDialect::MySQL => "MySQL DATE_SUB/DATE_ADD syntax",
+                crate::DatabaseDialect::SQLite => "SQLite date/strftime functions",
+                crate::DatabaseDialect::MongoDB => "MongoDB date operators ($gte, $lte with Date objects)",
+            },
             schema_context
         );
 
