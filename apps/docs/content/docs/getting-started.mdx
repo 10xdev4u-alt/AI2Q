@@ -1,0 +1,140 @@
+---
+title: Getting Started
+description: Install Grit and create your first full-stack project in minutes.
+---
+
+**Current version: v0.13.0**
+
+## Installation
+
+Install the Grit CLI globally:
+
+```bash
+go install github.com/MUKE-coder/grit/cmd/grit@latest
+```
+
+Verify the installation:
+
+```bash
+grit version
+# grit version 0.13.0
+```
+
+## Quick Start
+
+```bash
+grit new webapp            # Scaffold a new project
+cd webapp
+docker compose up -d   # Start PostgreSQL, Redis, MinIO, Mailhog
+pnpm install           # Install frontend dependencies
+pnpm dev               # Start all services
+```
+
+## Create a New Project
+
+```bash
+grit new webapp
+```
+
+This creates a full monorepo with:
+
+- **Go API** — JWT auth, user management, GORM Studio, and batteries (cache, storage, email, jobs, cron, AI)
+- **Web app** — SaaS marketing landing page with Framer Motion animations, linking to the admin panel for login/sign-up
+- **Admin panel** — Full authentication (login, sign-up, forgot-password), dashboard, resource management with DataTable, FormBuilder, ViewModal, toast notifications
+- **Shared package** — Zod schemas and TypeScript types shared between apps
+- **Docker Compose** — PostgreSQL, Redis, MinIO, and Mailhog
+
+## Start Development
+
+```bash
+# Start infrastructure
+cd webapp
+docker compose up -d
+
+# Install frontend dependencies
+pnpm install
+
+# Start all services
+pnpm dev
+```
+
+## Available Services
+
+| Service | URL |
+|---------|-----|
+| Web (Landing Page) | http://localhost:3000 |
+| Admin Panel | http://localhost:3001 |
+| Go API | http://localhost:8080 |
+| API Docs (gin-docs) | http://localhost:8080/docs |
+| Pulse (Observability) | http://localhost:8080/pulse/ui/ |
+| GORM Studio | http://localhost:8080/studio |
+| Mailhog | http://localhost:8025 |
+| MinIO Console | http://localhost:9001 |
+
+## Project Structure
+
+```
+webapp/
+├── apps/
+│   ├── api/          # Go backend (Gin + GORM)
+│   ├── web/          # Landing page (Next.js)
+│   └── admin/        # Admin panel (Next.js)
+├── packages/
+│   └── shared/       # Zod schemas, TS types, constants
+├── docker-compose.yml
+├── turbo.json
+└── pnpm-workspace.yaml
+```
+
+## CLI Flags
+
+```bash
+grit new myapp            # Full monorepo (api + web + admin + shared)
+grit new myapp --api      # Go API only
+grit new myapp --expo     # Full monorepo + Expo mobile app
+grit new myapp --mobile   # API + Expo mobile app only
+grit new myapp --full     # Everything + documentation site
+```
+
+## Generate a Resource
+
+Once your project is set up, generate full-stack CRUD resources:
+
+```bash
+grit generate resource Post --fields "title:string,content:text,published:bool"
+```
+
+This creates: Go model, handler, service, Zod schemas, TypeScript types, React Query hooks, and an admin resource page — all wired up automatically.
+
+## Upgrade an Existing Project
+
+After updating the CLI, upgrade your project's scaffold files to match:
+
+```bash
+# Update the CLI first
+go install github.com/MUKE-coder/grit/cmd/grit@latest
+
+# Then upgrade your project
+cd webapp
+grit upgrade
+```
+
+This regenerates admin components, web landing page, Docker configs, and documentation while preserving your resource definitions, API code, and environment variables.
+
+Use `--force` to overwrite all files without prompting:
+
+```bash
+grit upgrade --force
+```
+
+After upgrading, run `grit sync` to regenerate TypeScript types from your Go models.
+
+## No Docker?
+
+If you can't run Docker, use cloud services:
+
+```bash
+cp .env.cloud.example .env
+```
+
+Fill in your keys for [Neon](https://neon.tech) (Postgres), [Upstash](https://upstash.com) (Redis), [Cloudflare R2](https://dash.cloudflare.com) (storage), and [Resend](https://resend.com) (email).

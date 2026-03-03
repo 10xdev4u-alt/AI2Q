@@ -1,0 +1,149 @@
+---
+title: Batteries Overview
+description: Built-in services for cache, storage, email, background jobs, cron, and AI.
+---
+
+## Overview
+
+Grit comes with "batteries included" — production-ready services that are scaffolded with every project. All services follow a graceful degradation pattern: if the backing service (Redis, MinIO, etc.) is unavailable, the app logs a warning but continues running.
+
+## Redis Cache
+
+**Files:** internal/cache/, internal/middleware/cache.go
+
+A Redis-based caching service with HTTP middleware:
+
+```go
+// Cache a value
+cache.Set(ctx, "key", value, 5*time.Minute)
+
+// Get a cached value
+val, err := cache.Get(ctx, "key")
+
+// Delete a cached value
+cache.Delete(ctx, "key")
+```
+
+The cache middleware automatically caches GET responses:
+
+```go
+r.GET("/api/posts", middleware.Cache(cacheService, 5*time.Minute), handler.GetPosts)
+```
+
+## S3 File Storage
+
+**Files:** internal/storage/, internal/handlers/upload_handler.go
+
+S3-compatible file storage with image processing:
+
+- Upload files to MinIO (dev) or S3/R2/B2 (production)
+- Automatic image resizing with configurable dimensions
+- Secure pre-signed URLs for downloads
+- Admin file browser at /system/files
+
+Upload endpoint: POST /api/uploads (multipart form data)
+
+## Email (Resend)
+
+**Files:** internal/mail/
+
+Email service powered by Resend with 4 HTML templates:
+
+- **Welcome** — New user registration
+- **Password Reset** — Reset link email
+- **Notification** — Generic notifications
+- **Invoice** — Payment/billing emails
+
+```go
+mailer.Send(ctx, mail.Message{
+    To:       "user@example.com",
+    Subject:  "Welcome!",
+    Template: "welcome",
+    Data:     map[string]string{"name": "John"},
+})
+```
+
+Preview emails at /system/mail in the admin panel.
+
+## Background Jobs (asynq)
+
+**Files:** internal/jobs/
+
+Redis-based background job processing:
+
+- **Email jobs** — Send emails asynchronously
+- **Image jobs** — Process uploaded images
+- **Cleanup jobs** — Remove expired data
+
+```go
+// Enqueue a job
+client.Enqueue(jobs.NewEmailJob("user@example.com", "welcome"))
+```
+
+Monitor jobs at /system/jobs in the admin panel.
+
+## Cron Scheduler
+
+**Files:** internal/cron/
+
+Scheduled task execution built on asynq:
+
+- Define cron tasks with standard cron expressions
+- View scheduled tasks at /system/cron in the admin panel
+
+## AI Integration
+
+**Files:** internal/ai/
+
+Dual AI provider support:
+
+- **Claude** (Anthropic) — via the Anthropic API
+- **OpenAI** — via the OpenAI API
+
+Features:
+- Text generation with streaming support
+- Configurable via environment variables
+- Admin handler for AI operations
+
+```bash
+# .env configuration
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+AI_PROVIDER=claude  # or "openai"
+```
+
+## Configuration
+
+All batteries are configured via environment variables in .env:
+
+```bash
+# Redis
+REDIS_URL=localhost:6379
+
+# S3 Storage
+S3_ENDPOINT=localhost:9000
+S3_ACCESS_KEY=minioadmin
+S3_SECRET_KEY=minioadmin
+S3_BUCKET=uploads
+S3_REGION=us-east-1
+
+# Email
+RESEND_API_KEY=re_...
+MAIL_FROM=noreply@example.com
+
+# AI
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+AI_PROVIDER=claude
+```
+
+## Docker Services
+
+All backing services are included in docker-compose.yml:
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| PostgreSQL | 5432 | Database |
+| Redis | 6379 | Cache + Queue |
+| MinIO | 9000/9001 | File storage |
+| Mailhog | 8025 | Email testing |

@@ -1,0 +1,127 @@
+---
+title: Resource Management
+description: How resources work in the Grit admin panel — DataTable, FormBuilder, ViewModal, and more.
+---
+
+## Overview
+
+Resources are the core building block of the admin panel. Each resource represents a database entity (e.g., Users, Posts, Products) and is defined using defineResource().
+
+## Defining a Resource
+
+Create a resource definition in resources/plural.ts:
+
+```typescript
+import { defineResource } from "@/lib/resource";
+
+export const postsResource = defineResource({
+  name: "Post",
+  plural: "posts",
+  apiRoute: "/api/posts",
+  icon: "FileText",
+  columns: [
+    { key: "title", label: "Title", sortable: true, searchable: true },
+    { key: "status", label: "Status", format: "badge", sortable: true },
+    { key: "createdAt", label: "Created", format: "date", sortable: true },
+  ],
+  fields: [
+    { key: "title", label: "Title", type: "text", required: true },
+    { key: "content", label: "Content", type: "textarea" },
+    { key: "status", label: "Status", type: "select", options: [
+      { label: "Draft", value: "draft" },
+      { label: "Published", value: "published" },
+    ]},
+  ],
+  defaultSort: { key: "createdAt", direction: "desc" },
+  actions: ["create", "edit", "delete", "view"],
+});
+```
+
+## Resource Page
+
+Each resource gets a thin page wrapper in app/(dashboard)/resources/plural/page.tsx:
+
+```typescript
+"use client";
+import { ResourcePage } from "@/components/resource/ResourcePage";
+import { postsResource } from "@/resources/posts";
+
+export default function PostsPage() {
+  return <ResourcePage resource={postsResource} />;
+}
+```
+
+The ResourcePage component handles everything: DataTable, search, filters, pagination, create/edit modals, view modal, and delete confirmation.
+
+## DataTable
+
+The DataTable component supports:
+
+- **Sorting** — Click column headers to sort
+- **Search** — Full-text search across searchable columns
+- **Filters** — Column-specific filters
+- **Selection** — Checkbox selection with bulk actions (bulk delete)
+- **Pagination** — Page size selector and page navigation
+- **Actions** — View (eye icon), Edit (pencil icon), Delete (trash icon) per row
+
+## FormBuilder and FormModal
+
+The FormBuilder renders forms dynamically based on the resource fields definition:
+
+| Field Type | Component | Description |
+|-----------|-----------|-------------|
+| text | TextField | Single-line text input |
+| textarea | TextAreaField | Multi-line text input |
+| number | NumberField | Numeric input |
+| select | SelectField | Dropdown selection |
+| date | DateField | Date picker |
+| toggle | ToggleField | Boolean toggle switch |
+| checkbox | CheckboxField | Checkbox input |
+| radio | RadioField | Radio button group |
+| image | Dropzone | Image upload with drag-and-drop |
+
+The FormModal wraps FormBuilder in a slide-over modal for create/edit operations.
+
+## ViewModal
+
+The ViewModal displays a read-only view of a resource record:
+
+- Two-column layout for field labels and values
+- Formatted values based on column format (badge, date, boolean, image)
+- "Edit" button to switch to edit mode
+- Clean, professional design
+
+## Confirm Modal
+
+Delete operations use a custom confirmation modal instead of the browser confirm() dialog:
+
+- Danger variant with red confirm button
+- Custom title and description
+- Loading state during deletion
+- Works for both single-item and bulk delete
+
+## Column Formats
+
+Available column formats for the DataTable:
+
+| Format | Description |
+|--------|-------------|
+| text | Plain text (default) |
+| badge | Colored badge |
+| date | Formatted date |
+| boolean | Check/X icon |
+| image | Thumbnail image |
+| email | Email link |
+| url | External link |
+| number | Formatted number |
+| currency | Currency value |
+
+## Generating Resources
+
+Use the CLI to generate a complete resource:
+
+```bash
+grit generate resource Post --fields "title:string,content:text,status:select:draft,published"
+```
+
+This creates all Go backend code, shared types, React hooks, resource definition, and admin page — fully wired up and ready to use.

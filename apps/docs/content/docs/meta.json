@@ -1,0 +1,12 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "index",
+    "getting-started",
+    "...cli",
+    "...admin",
+    "...api",
+    "...batteries",
+    "about"
+  ]
+}

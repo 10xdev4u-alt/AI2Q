@@ -1,0 +1,100 @@
+---
+title: Authentication
+description: JWT-based authentication with access and refresh tokens.
+---
+
+## Overview
+
+Grit uses **JWT (JSON Web Tokens)** for authentication with a dual-token system:
+
+- **Access Token** — Short-lived (15 minutes), sent with every request
+- **Refresh Token** — Long-lived (7 days), used to obtain new access tokens
+
+## Endpoints
+
+### Register
+
+```bash
+POST /api/auth/register
+Content-Type: application/json
+
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "securepassword"
+}
+```
+
+### Login
+
+```bash
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "john@example.com",
+  "password": "securepassword"
+}
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "user": {
+      "id": "uuid",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "role": "user"
+    },
+    "access_token": "eyJhbG...",
+    "refresh_token": "eyJhbG..."
+  },
+  "message": "Login successful"
+}
+```
+
+### Refresh Token
+
+```bash
+POST /api/auth/refresh
+Content-Type: application/json
+
+{
+  "refresh_token": "eyJhbG..."
+}
+```
+
+### Get Current User
+
+```bash
+GET /api/auth/me
+Authorization: Bearer <access_token>
+```
+
+### Logout
+
+```bash
+POST /api/auth/logout
+Authorization: Bearer <access_token>
+```
+
+## Using Authentication in Requests
+
+Include the access token in the `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer <access_token>" http://localhost:8080/api/users
+```
+
+## Role-Based Access
+
+Users have a `role` field that can be `user` or `admin`. Protected routes use the `RequireRole` middleware:
+
+```go
+// Only admins can access this route
+admin := r.Group("/admin")
+admin.Use(middleware.RequireAuth(db))
+admin.Use(middleware.RequireRole("admin"))
+```

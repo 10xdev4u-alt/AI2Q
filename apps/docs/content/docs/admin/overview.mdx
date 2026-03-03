@@ -1,0 +1,75 @@
+---
+title: Admin Panel Overview
+description: A complete admin dashboard with authentication, resource management, and system pages.
+---
+
+## Overview
+
+The Grit admin panel is a full-featured Next.js application at apps/admin/. It includes authentication, a dashboard, resource CRUD management, and system administration pages.
+
+## Architecture
+
+The admin panel uses **Next.js App Router** with route groups to separate authenticated and public pages:
+
+```
+apps/admin/app/
++-- layout.tsx                        # Root layout (Providers, no sidebar)
++-- page.tsx                          # Redirect: /dashboard or /login
++-- (auth)/
+|   +-- login/page.tsx                # Login page
+|   +-- sign-up/page.tsx              # Registration page
+|   +-- forgot-password/page.tsx      # Password reset
++-- (dashboard)/
+    +-- layout.tsx                    # AdminLayout (sidebar + navbar)
+    +-- dashboard/page.tsx            # Dashboard home
+    +-- resources/users/page.tsx      # Users resource page
+    +-- system/
+        +-- jobs/page.tsx             # Background jobs
+        +-- files/page.tsx            # File browser
+        +-- cron/page.tsx             # Cron scheduler
+        +-- mail/page.tsx             # Mail preview
+```
+
+## Authentication Pages
+
+The admin panel includes split-screen auth pages with a branded left panel and form on the right:
+
+- **Login** (/login) — Email/password with password visibility toggle
+- **Sign Up** (/sign-up) — Name, email, password, confirm password
+- **Forgot Password** (/forgot-password) — Email-based password reset
+
+Auth pages use the (auth) route group and do NOT include the sidebar/navbar layout.
+
+## Dashboard
+
+The dashboard page (/dashboard) displays:
+
+- Welcome greeting with the logged-in user's name
+- Resource cards showing all registered resources with icons and record counts
+- Quick links to system pages and GORM Studio
+
+## Layout
+
+The admin layout includes:
+
+- **Sidebar** — Collapsible with Lucide icons, dashboard link, dynamic resource navigation (read from the resource registry), system pages section
+- **Navbar** — Breadcrumbs, theme toggle (dark/light), user menu with logout
+- **Theme** — Dark mode by default with a premium design system
+
+## Toast Notifications
+
+All CRUD operations display toast notifications via Sonner:
+
+- **Create** — "Created successfully"
+- **Update** — "Updated successfully"
+- **Delete** — "Deleted successfully"
+- **Error** — "Something went wrong"
+
+## System Pages
+
+Under /system/*, the admin includes:
+
+- **Jobs** — Background job dashboard (asynq)
+- **Files** — S3/MinIO file browser
+- **Cron** — Scheduled task viewer
+- **Mail** — Email template preview

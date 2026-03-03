@@ -1,0 +1,187 @@
+---
+title: CLI Commands
+description: Complete reference for all Grit CLI commands.
+---
+
+## grit new
+
+Scaffold a new Grit project.
+
+```bash
+grit new <project-name> [flags]
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| --api | Scaffold Go API only (no frontend) |
+| --expo | Include Expo React Native app |
+| --mobile | API + Expo app only |
+| --full | Everything including docs site |
+
+**Examples:**
+
+```bash
+grit new my-saas              # Full monorepo
+grit new my-saas --api        # Backend only
+grit new my-saas --full       # With docs site
+```
+
+## grit generate resource
+
+Generate a full-stack CRUD resource with a single command.
+
+```bash
+grit generate resource <Name> [flags]
+```
+
+**Aliases:** grit g resource
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| --fields | Inline field definitions |
+| --from | YAML file with field definitions |
+| -i, --interactive | Interactive field builder |
+
+**Generated files:**
+
+- Go model (internal/models/name.go)
+- Go service (internal/services/name_service.go)
+- Go handler (internal/handlers/name_handler.go)
+- Zod schemas (packages/shared/schemas/name.ts)
+- TypeScript types (packages/shared/types/name.ts)
+- React Query hooks (apps/admin/hooks/use-plural.ts)
+- Admin resource definition (apps/admin/resources/plural.ts)
+- Admin resource page (apps/admin/app/(dashboard)/resources/plural/page.tsx)
+
+**Field types:**
+
+| Type | Go Type | Example |
+|------|---------|---------|
+| string | string | title:string |
+| text | string | content:text |
+| int | int | views:int |
+| float | float64 | price:float |
+| bool | bool | published:bool |
+| date | time.Time | due_date:date |
+| email | string | contact:email |
+| url | string | website:url |
+| image | string | avatar:image |
+| select | string | status:select:draft,published,archived |
+
+**Field modifiers:**
+
+Append modifiers after the type with a colon:
+
+```bash
+grit g resource Post --fields "title:string:required,slug:string:unique,views:int:default=0"
+```
+
+| Modifier | Description |
+|----------|-------------|
+| required | NOT NULL constraint |
+| unique | UNIQUE constraint |
+| optional | Nullable field |
+| default=X | Default value |
+
+## grit sync
+
+Sync Go model types to TypeScript types and Zod schemas.
+
+```bash
+grit sync
+```
+
+Parses all Go model files in apps/api/internal/models/ and regenerates the corresponding TypeScript types and Zod schemas in packages/shared/.
+
+## grit upgrade
+
+Upgrade an existing Grit project to the latest scaffold templates.
+
+```bash
+grit upgrade [flags]
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| -f, --force | Overwrite all files without prompting |
+
+**What gets updated:**
+
+- Admin panel components (layout, tables, forms, widgets, resource UI)
+- Web landing page
+- Docker and root configuration files
+- Documentation (if present)
+- Expo app (if present)
+
+**What is preserved:**
+
+- Your resource definitions (resources/*.ts)
+- API handlers, services, and models
+- Environment variables (.env)
+- Custom code you've written
+
+Run grit sync after upgrading to regenerate TypeScript types.
+
+## grit migrate
+
+Run database migrations using GORM AutoMigrate.
+
+```bash
+grit migrate [flags]
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| --fresh | Drop all tables before migrating |
+
+**Examples:**
+
+```bash
+grit migrate            # Run migrations
+grit migrate --fresh    # Drop all tables and re-migrate
+```
+
+The migrate command connects to the database (using DATABASE_URL from .env) and runs GORM AutoMigrate for all registered models. Use --fresh to drop all tables first — useful for resetting during development.
+
+## grit seed
+
+Populate the database with initial data.
+
+```bash
+grit seed
+```
+
+Seeds the database with:
+
+- **Admin user** — admin@example.com / password (role: admin)
+- **Demo users** — Sample accounts for testing
+
+The seeder is idempotent — it skips records that already exist. Add your own seeders in apps/api/internal/database/seed.go.
+
+## grit update
+
+Update the Grit CLI itself to the latest version. This removes the current binary and installs the newest release from GitHub.
+
+```bash
+grit update
+```
+
+This runs `go install github.com/MUKE-coder/grit/cmd/grit@latest` under the hood, replacing the old binary with the latest version. Run `grit version` afterwards to verify.
+
+> **Note:** `grit update` updates the **CLI tool**. To update your **project's scaffold files**, use `grit upgrade` instead.
+
+## grit version
+
+Print the installed Grit CLI version.
+
+```bash
+grit version
+```
