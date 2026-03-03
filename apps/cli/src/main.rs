@@ -28,6 +28,21 @@ enum Commands {
         /// Database URL for schema context
         #[arg(short, long)]
         url: String,
+        /// OpenAI API Key
+        #[arg(long, env = "OPENAI_API_KEY")]
+        openai_key: Option<String>,
+        /// OpenAI Model
+        #[arg(long, default_value = "gpt-4-turbo-preview")]
+        model: String,
+        /// Ollama Host
+        #[arg(long, default_value = "http://localhost")]
+        ollama_host: String,
+        /// Ollama Port
+        #[arg(long, default_value = "11434")]
+        ollama_port: u16,
+        /// Use Ollama for local inference
+        #[arg(long)]
+        use_ollama: bool,
     },
 }
 
@@ -50,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", "Schema crawled successfully!".green().bold());
             println!("{:#?}", schema);
         }
-        Commands::Translate { prompt, url } => {
+        Commands::Translate { prompt, url, openai_key, model, ollama_host, ollama_port, use_ollama } => {
             println!("{}", "Crawling schema for context...".cyan());
             let pool = PgPoolOptions::new()
                 .max_connections(1)
@@ -60,8 +75,16 @@ async fn main() -> anyhow::Result<()> {
             let schema = crawler.crawl().await?;
 
             println!("{}", "Translating prompt...".cyan());
-            let translator = aiql_core::translator::MockTranslator;
-            let plan = aiql_core::Translator::translate(&translator, prompt, &schema).await?;
+            let config = if *use_ollama {
+                aiql_core::translator::TranslatorConfig::Ollama { host: ollama_host.clone(), port: *ollama_port, model: model.clone() }
+            } else if let Some(key) = openai_key {
+                aiql_core::translator::TranslatorConfig::OpenAI { api_key: key.clone(), model: model.clone(), temperature: None }
+            } else {
+                aiql_core::translator::TranslatorConfig::Mock
+            };
+
+            let translator = aiql_core::translator::create_translator(config);
+            let plan = translator.translate(prompt, &schema).await?;
 
             println!("{}", "Translation generated:".green().bold());
             println!("{}: {}", "SQL".bold().blue(), plan.raw_query.yellow());
