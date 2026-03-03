@@ -1,1 +1,8 @@
-target/\n.next/\nnode_modules/\n*.log\n.env
+target/
+.next/
+node_modules/
+*.log
+.env
+venv/
+__pycache__/
+*.so
