@@ -305,7 +305,32 @@ impl Translator for OpenAITranslator {
 }
 
 #[async_trait]
-impl crate::Advisor for OpenAITranslator {
+impl crate::Refactorer for OpenAITranslator {
+    async fn refactor(&self, code: &str) -> anyhow::Result<String> {
+        let system_prompt = "You are an expert code refactorer. Find manual SQL strings in the code and replace them with ai(\"natural language\") calls.\n\
+                             Return ONLY the refactored code.";
+
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.model)
+            .messages([
+                ChatCompletionRequestSystemMessageArgs::default()
+                    .content(system_prompt)
+                    .build()?
+                    .into(),
+                ChatCompletionRequestUserMessageArgs::default()
+                    .content(code)
+                    .build()?
+                    .into(),
+            ])
+            .build()?;
+
+        let response = self.client.chat().create(request).await?;
+        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response"))?;
+        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty content"))?;
+
+        Ok(content.clone())
+    }
+}
     async fn advise(&self, plan: &QueryPlan, schema: &Schema) -> anyhow::Result<Vec<String>> {
         let schema_context = self.build_schema_context(schema, &plan.raw_query);
         let system_prompt = format!(

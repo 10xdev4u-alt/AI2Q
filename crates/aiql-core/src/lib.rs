@@ -230,6 +230,13 @@ pub trait Advisor {
     async fn advise(&self, plan: &QueryPlan, schema: &Schema) -> anyhow::Result<Vec<String>>;
 }
 
+/// Refactorer scans code for manual SQL and suggests AIQL replacements.
+#[async_trait::async_trait]
+pub trait Refactorer {
+    /// Refactors manual SQL strings into AIQL natural language calls.
+    async fn refactor(&self, code: &str) -> anyhow::Result<String>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

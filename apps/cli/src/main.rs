@@ -100,6 +100,15 @@ enum Commands {
         #[arg(long, env = "OPENAI_API_KEY")]
         openai_key: Option<String>,
     },
+    /// Refactor codebase to replace manual SQL with AIQL calls
+    Refactor {
+        /// File path to refactor
+        #[arg(short, long)]
+        file: String,
+        /// OpenAI API Key
+        #[arg(long, env = "OPENAI_API_KEY")]
+        openai_key: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -248,6 +257,26 @@ async fn main() -> anyhow::Result<()> {
                     }
                     _ => println!("{}", format!("Unsupported platform: {}", platform).red()),
                 }
+            }
+        }
+        Commands::Refactor { file, openai_key } => {
+            let content = std::fs::read_to_string(&file)?;
+            println!("{}", format!("Refactoring {}...", file).cyan());
+
+            let translator = aiql_core::translator::OpenAITranslator::new(
+                openai_key.clone().unwrap_or_default(),
+                "gpt-4-turbo-preview".into()
+            );
+
+            let refactored = aiql_core::Refactorer::refactor(&translator, &content).await?;
+
+            println!("{}", "Refactored Code:".green().bold());
+            println!("{}", refactored.yellow());
+
+            use dialoguer::Confirm;
+            if Confirm::new().with_prompt("Do you want to overwrite the file?").interact()? {
+                std::fs::write(file, refactored)?;
+                println!("{}", "File updated successfully!".green().bold());
             }
         }
     }
