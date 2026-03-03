@@ -1,10 +1,24 @@
+"use client"
+
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Database, Search, Shield, Zap, RefreshCw, Layers } from "lucide-react"
+import Link from "next/link"
 
 export default function Home() {
+  const [demoPrompt, setDemoPrompt] = useState("")
+  const [demoOutput, setDemoOutput] = useState("")
+
+  const handleDemo = () => {
+    if (!demoPrompt) return
+    setDemoOutput("TRANSLATING...")
+    setTimeout(() => {
+      setDemoOutput("SELECT * FROM users\nWHERE created_at >= NOW() - INTERVAL '7 days';")
+    }, 1000)
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground selection:bg-primary selection:text-primary-foreground font-mono">
       {/* Hero Section */}
@@ -23,12 +37,16 @@ export default function Home() {
           </div>
 
           <div className="flex flex-col md:flex-row gap-6">
-            <Button size="lg" className="h-16 px-12 text-2xl font-black rounded-none border-4 border-foreground shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all">
-              GET STARTED
-            </Button>
-            <Button size="lg" variant="outline" className="h-16 px-12 text-2xl font-black rounded-none border-4 border-foreground shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] bg-white text-black hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all">
-              VIEW DOCS
-            </Button>
+            <Link href="/playground">
+              <Button size="lg" className="h-16 px-12 text-2xl font-black rounded-none border-4 border-foreground shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all w-full md:w-auto">
+                GET STARTED
+              </Button>
+            </Link>
+            <Link href="/schema">
+              <Button size="lg" variant="outline" className="h-16 px-12 text-2xl font-black rounded-none border-4 border-foreground shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] bg-white text-black hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all w-full md:w-auto">
+                VIEW SCHEMA
+              </Button>
+            </Link>
           </div>
         </div>
       </section>
@@ -96,27 +114,25 @@ export default function Home() {
           <div className="border-8 border-background bg-zinc-900 p-8 shadow-[12px_12px_0px_0px_rgba(255,255,255,0.2)]">
             <div className="flex gap-4 mb-8">
               <Input 
+                value={demoPrompt}
+                onChange={(e) => setDemoPrompt(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleDemo()}
                 placeholder="Ask your database: 'Top 5 users by revenue this month...'" 
-                className="h-16 bg-zinc-800 border-4 border-background text-2xl font-bold rounded-none focus-visible:ring-0 focus-visible:border-primary"
+                className="h-16 bg-zinc-800 border-4 border-background text-2xl font-bold rounded-none focus-visible:ring-0 focus-visible:border-primary text-white"
               />
-              <Button className="h-16 px-8 text-2xl font-black rounded-none border-4 border-background bg-primary hover:bg-primary/90">
+              <Button onClick={handleDemo} className="h-16 px-8 text-2xl font-black rounded-none border-4 border-background bg-primary hover:bg-primary/90">
                 QUERY
               </Button>
             </div>
 
-            <div className="space-y-4 font-mono text-xl opacity-80">
-              <div className="flex gap-2">
-                <span className="text-green-400">$</span>
-                <span>aiql.ask("Who joined last week?")</span>
-              </div>
-              <div className="p-6 bg-zinc-800 border-2 border-dashed border-background/20">
-                <pre className="text-yellow-400">
-                  {`SELECT * FROM users\nWHERE created_at >= NOW() - INTERVAL '7 days';`}
-                </pre>
-                <div className="mt-4 text-blue-400 italic">
-                  -- Generating query using User and Profile tables...
+            <div className="space-y-4 font-mono text-xl opacity-80 text-white min-h-[100px]">
+              {demoOutput && (
+                <div className="p-6 bg-zinc-800 border-2 border-dashed border-background/20 animate-in fade-in slide-in-from-top-2">
+                  <pre className="text-yellow-400 whitespace-pre-wrap">
+                    {demoOutput}
+                  </pre>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
