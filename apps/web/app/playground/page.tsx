@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { Terminal, Send, Zap, Shield, RefreshCw, Loader2, Braces, History } from "lucide-react"
+import { Terminal, Send, Zap, Shield, RefreshCw, Loader2, Braces, History, Ghost } from "lucide-react"
 import { aiqlApi, TranslateResult, Schema } from "@/lib/aiql"
 import { Badge } from "@/components/ui/badge"
 
@@ -29,6 +29,7 @@ export default function PlaygroundPage() {
   const [prompt, setPrompt] = useState("")
   const [dialect, setDialect] = useState("postgres")
   const [shouldExecute, setShouldExecute] = useState(false)
+  const [shouldMock, setShouldMock] = useState(false)
   const [dbUrl, setDbUrl] = useState("")
   const [schemaJson, setSchemaJson] = useState(JSON.stringify(DEFAULT_SCHEMA, null, 2))
   const [history, setHistory] = useState<any[]>([
@@ -70,13 +71,14 @@ export default function PlaygroundPage() {
           }])
         } else if (result.Error) {
           setHistory(prev => [...prev, { role: "system", content: `Execution Error: ${result.Error}` }])
-        } else if (result.ClarificationNeeded) {
-          setHistory(prev => [...prev, { 
-            role: "system", 
-            content: `Clarification Needed: ${result.ClarificationNeeded.reason}`,
-            suggestions: result.ClarificationNeeded.suggestions
-          }])
         }
+      } else if (shouldMock) {
+        const queries = await aiqlApi.mock(prompt, activeSchema)
+        setHistory(prev => [...prev, { 
+          role: "ai", 
+          content: queries.join("\n"),
+          explanation: "Generated synthetic data queries."
+        }])
       } else {
         const result = await aiqlApi.translate(prompt, activeSchema)
         if (result.type === "plan") {
@@ -144,7 +146,16 @@ export default function PlaygroundPage() {
                   <input 
                     type="checkbox" 
                     checked={shouldExecute} 
-                    onChange={(e) => setShouldExecute(e.target.checked)}
+                    onChange={(e) => { setShouldExecute(e.target.checked); if (e.target.checked) setShouldMock(false); }}
+                    className="w-4 h-4 border-2 border-foreground rounded-none accent-primary"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase">Mock Mode</span>
+                  <input 
+                    type="checkbox" 
+                    checked={shouldMock} 
+                    onChange={(e) => { setShouldMock(e.target.checked); if (e.target.checked) setShouldExecute(false); }}
                     className="w-4 h-4 border-2 border-foreground rounded-none accent-primary"
                   />
                 </div>
@@ -169,13 +180,13 @@ export default function PlaygroundPage() {
                 <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground flex items-center gap-2">
                   <History className="w-3 h-3" /> Recent Queries
                 </div>
-                <div className="space-y-1">
+                <div className="space-y-1 text-foreground">
                   {recentQueries.map((q, i) => (
-                    <div key={i} onClick={() => setPrompt(q)} className="text-[8px] font-bold border border-foreground/10 p-1 hover:bg-primary/20 cursor-pointer truncate uppercase text-foreground">
+                    <div key={i} onClick={() => setPrompt(q)} className="text-[8px] font-bold border border-foreground/10 p-1 hover:bg-primary/20 cursor-pointer truncate uppercase">
                       {q}
                     </div>
                   ))}
-                  {recentQueries.length === 0 && <div className="text-[8px] italic opacity-50 uppercase text-foreground">No recent queries</div>}
+                  {recentQueries.length === 0 && <div className="text-[8px] italic opacity-50 uppercase">No recent queries</div>}
                 </div>
 
                 <div className="text-xs font-black uppercase border-b-2 border-foreground/20 pb-2 pt-2 text-foreground">Engine Status</div>
