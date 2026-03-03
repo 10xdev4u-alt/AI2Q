@@ -62,12 +62,18 @@ We are committed to building the most robust AI Query Layer. Our journey to 200+
     - [x] Dry-run validation using `EXPLAIN` and `explain()`.
     - [x] Context pruning for massive schemas.
     - [x] MongoDB (MQL) Crawler and Execution Engine.
-- [ ] **Phase 3: Advanced Flows & Production (Commits 101-150)**
-    - [ ] MongoDB (MQL) and Supabase adapters.
-    - [ ] Vector-Integrated Queries (pgvector).
-    - [ ] Multi-turn "Chat-with-DB" session management.
-    - [ ] Natural Language Migrations.
-- [ ] **Phase 4: Polishing & Production (Commits 151-200+)**
+- [x] **Phase 3: Advanced Flows & Production (Commits 101-150)**
+    - [x] Natural Language Migrations (`ai.migrate`).
+    - [x] Vector-Integrated Queries (pgvector).
+    - [x] Multi-turn "Chat-with-DB" session management.
+    - [x] Semantic Caching with cosine similarity.
+    - [x] Privacy-First Masking (PII scrubbing).
+    - [x] Performance Budgeting (Cost/Time limits).
+    - [x] Ambiguity Guard (Clarification requests).
+    - [x] Automatic Join-Discovery (Name-based).
+    - [x] Synthetic Data Mocking (`ai.mock`).
+    - [x] Temporal Queries (Current time awareness).
+- [ ] **Phase 4: Web Dashboard & Final Polish (Commits 151-200+)**
     - [ ] Grit Web Dashboard (Interactive Schema Map).
     - [ ] Performance budgeting and rate limiting.
     - [ ] Privacy masking for PII.
