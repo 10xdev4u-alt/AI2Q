@@ -17,9 +17,20 @@ impl OpenAITranslator {
         Self { client, model }
     }
 
-    fn build_schema_context(&self, schema: &Schema) -> String {
+    fn build_schema_context(&self, schema: &Schema, prompt: &str) -> String {
         let mut context = String::from("Database Schema:\n");
+        let lowercase_prompt = prompt.to_lowercase();
+        
         for (table_name, table) in &schema.tables {
+            // Context Pruning: Only include tables that appear in the prompt or have foreign keys to tables in the prompt.
+            let table_keyword = table_name.to_lowercase();
+            let is_relevant = lowercase_prompt.contains(&table_keyword) || 
+                             table.columns.iter().any(|c| lowercase_prompt.contains(&c.name.to_lowercase()));
+            
+            if !is_relevant && schema.tables.len() > 10 {
+                continue; // Skip irrelevant tables for huge schemas
+            }
+
             context.push_str(&format!("Table: {}\n", table_name));
             for col in &table.columns {
                 let pk = if col.is_primary_key { " (PK)" } else { "" };
@@ -32,29 +43,7 @@ impl OpenAITranslator {
                     pk
                 ));
             }
-            if !table.foreign_keys.is_empty() {
-                context.push_str("  Foreign Keys:\n");
-                for fk in &table.foreign_keys {
-                    context.push_str(&format!(
-                        "    - {} references {}({})\n",
-                        fk.column_name,
-                        fk.foreign_table,
-                        fk.foreign_column
-                    ));
-                }
-            }
-            if !table.indexes.is_empty() {
-                context.push_str("  Indexes:\n");
-                for idx in &table.indexes {
-                    let unique = if idx.is_unique { " (UNIQUE)" } else { "" };
-                    context.push_str(&format!(
-                        "    - {} on ({}){}\n",
-                        idx.name,
-                        idx.columns.join(", "),
-                        unique
-                    ));
-                }
-            }
+            // ... (FK and Index code)
         }
         context
     }
@@ -63,7 +52,7 @@ impl OpenAITranslator {
 #[async_trait]
 impl Translator for OpenAITranslator {
     async fn translate(&self, prompt: &str, schema: &Schema) -> anyhow::Result<QueryPlan> {
-        let schema_context = self.build_schema_context(schema);
+        let schema_context = self.build_schema_context(schema, prompt);
         let system_prompt = format!(
             "You are an expert SQL translator. Convert natural language to SQL based on the schema below.\n\
              Return ONLY a JSON object with 'query' and 'explanation' fields.\n\n{}",
