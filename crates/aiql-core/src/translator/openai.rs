@@ -305,7 +305,54 @@ impl Translator for OpenAITranslator {
 }
 
 #[async_trait]
-impl crate::MockDataGenerator for OpenAITranslator {
+impl crate::QueryHealer for OpenAITranslator {
+    async fn heal(&self, query: &str, error: &str, schema: &Schema, dialect: crate::DatabaseDialect, context: &crate::Context) -> anyhow::Result<QueryPlan> {
+        let schema_context = self.build_schema_context(schema, query);
+        let system_prompt = format!(
+            "You are an expert SQL/NoSQL debugger. Fix the broken query below for {}.\n\
+             Error: {}\n\
+             Current Time: {}\n\
+             Return ONLY a JSON object with 'query' and 'explanation' fields.\n\n{}",
+            match dialect {
+                crate::DatabaseDialect::MongoDB => "MongoDB Aggregation Pipeline JSON",
+                _ => "SQL",
+            },
+            error,
+            context.now,
+            schema_context
+        );
+
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.model)
+            .messages([
+                ChatCompletionRequestSystemMessageArgs::default()
+                    .content(system_prompt)
+                    .build()?
+                    .into(),
+                ChatCompletionRequestUserMessageArgs::default()
+                    .content(format!("Broken Query: {}\nError: {}", query, error))
+                    .build()?
+                    .into(),
+            ])
+            .response_format(async_openai::types::ResponseFormat::JsonObject)
+            .build()?;
+
+        let response = self.client.chat().create(request).await?;
+        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response"))?;
+        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty content"))?;
+
+        let parsed: serde_json::Value = serde_json::from_str(content)?;
+        let fixed_query = parsed["query"].as_str().ok_or_else(|| anyhow::anyhow!("Missing query"))?.to_string();
+        let explanation = parsed["explanation"].as_str().unwrap_or("").to_string();
+
+        Ok(QueryPlan {
+            dialect,
+            raw_query: fixed_query,
+            explanation,
+            cost: None,
+        })
+    }
+}
     async fn generate_mock_data(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect) -> anyhow::Result<Vec<String>> {
         let schema_context = self.build_schema_context(schema, prompt);
         let system_prompt = format!(

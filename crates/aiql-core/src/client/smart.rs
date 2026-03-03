@@ -108,7 +108,7 @@ where
                 log::warn!("AIQL: Query failed: {}. Attempting self-healing...", error_msg);
                 
                 // 9. Heal
-                let healed_plan = self.healer.heal(&raw_query_with_explanation, &error_msg, schema).await?;
+                let healed_plan = self.healer.heal(&raw_query_with_explanation, &error_msg, schema, dialect, &context).await?;
                 log::info!("AIQL: Healed query: {}", healed_plan.raw_query);
                 
                 // 10. Retry
@@ -259,9 +259,9 @@ mod tests {
     struct MockHealer;
     #[async_trait]
     impl QueryHealer for MockHealer {
-        async fn heal(&self, _query: &str, _error: &str, _schema: &Schema) -> anyhow::Result<QueryPlan> {
+        async fn heal(&self, _query: &str, _error: &str, _schema: &Schema, dialect: crate::DatabaseDialect, _context: &crate::Context) -> anyhow::Result<QueryPlan> {
             Ok(QueryPlan {
-                dialect: crate::DatabaseDialect::Postgres,
+                dialect,
                 raw_query: "Healed SELECT * FROM users;".to_string(),
                 explanation: "Healed".to_string(),
                 cost: None,

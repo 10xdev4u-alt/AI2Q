@@ -117,8 +117,8 @@ pub trait Translator {
 /// QueryHealer is responsible for fixing broken or inefficient queries.
 #[async_trait::async_trait]
 pub trait QueryHealer {
-    /// Heals a broken query by analyzing the error message and schema context.
-    async fn heal(&self, query: &str, error: &str, schema: &Schema) -> anyhow::Result<QueryPlan>;
+    /// Heals a broken query by analyzing the error message, schema context, and dialect.
+    async fn heal(&self, query: &str, error: &str, schema: &Schema, dialect: DatabaseDialect, context: &Context) -> anyhow::Result<QueryPlan>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
