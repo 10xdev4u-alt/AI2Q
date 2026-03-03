@@ -1,0 +1,22 @@
+{
+  "name": "webapp",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "type-check": "turbo type-check",
+    "dev:api": "cd apps/api && air",
+    "dev:web": "cd apps/web && pnpm dev",
+    "dev:admin": "cd apps/admin && pnpm dev",
+    "dev:expo": "cd apps/expo && npx expo start",
+    "dev:docs": "cd apps/docs && pnpm dev",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  },
+  "packageManager": "pnpm@10.0.0"
+}
