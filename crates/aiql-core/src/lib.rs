@@ -253,6 +253,13 @@ pub trait DocGenerator {
     async fn generate_docs(&self, schema: &Schema) -> anyhow::Result<String>;
 }
 
+/// SchemaSearcher finds tables and columns based on semantic meaning.
+#[async_trait::async_trait]
+pub trait SchemaSearcher {
+    /// Searches the schema for tables or columns relevant to the query.
+    async fn search(&self, query: &str, schema: &Schema) -> anyhow::Result<Vec<String>>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

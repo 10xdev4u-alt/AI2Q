@@ -367,6 +367,35 @@ impl Refactorer for OpenAITranslator {
 }
 
 #[async_trait]
+impl crate::SchemaSearcher for OpenAITranslator {
+    async fn search(&self, query: &str, schema: &Schema) -> anyhow::Result<Vec<String>> {
+        let schema_context = self.build_schema_context(schema, "searching schema");
+        let system_prompt = "You are a database discovery assistant. Given a query, identify the most relevant tables and columns in the schema.\n\
+                             Return ONLY a JSON object with a 'matches' field containing an array of strings like 'table_name' or 'table_name.column_name'.";
+
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.model)
+            .messages([
+                ChatCompletionRequestSystemMessageArgs::default().content(system_prompt).build()?.into(),
+                ChatCompletionRequestUserMessageArgs::default().content(format!("Query: {}\nSchema:\n{}", query, schema_context)).build()?.into(),
+            ])
+            .response_format(async_openai::types::ResponseFormat::JsonObject)
+            .build()?;
+
+        let response = self.client.chat().create(request).await?;
+        let choice = response.choices.first().ok_or_else(|| anyhow::anyhow!("No response"))?;
+        let content = choice.message.content.as_ref().ok_or_else(|| anyhow::anyhow!("Empty response"))?;
+
+        let parsed: serde_json::Value = serde_json::from_str(content)?;
+        let matches = parsed["matches"].as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+
+        Ok(matches)
+    }
+}
+
+#[async_trait]
 impl crate::DocGenerator for OpenAITranslator {
     async fn generate_docs(&self, schema: &Schema) -> anyhow::Result<String> {
         let schema_context = self.build_schema_context(schema, "generate documentation");
