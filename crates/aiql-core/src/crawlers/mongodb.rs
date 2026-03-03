@@ -42,12 +42,26 @@ impl SchemaCrawler for MongoSchemaCrawler {
                 }
             }
 
+            let mut index_cursor = collection.list_indexes().await?;
+            let mut indexes = Vec::new();
+            while let Some(index_res) = index_cursor.next().await {
+                let index = index_res?;
+                let index_name = index.options.and_then(|o| o.name).unwrap_or_else(|| "unnamed".to_string());
+                let columns: Vec<String> = index.keys.keys().map(|s| s.to_string()).collect();
+
+                indexes.push(crate::Index {
+                    name: index_name,
+                    columns,
+                    is_unique: false, // MongoDB unique index info is in options
+                });
+            }
+
             tables.insert(
                 coll_name.clone(),
                 Table {
                     name: coll_name,
                     columns: inferred_columns.into_values().collect(),
-                    indexes: Vec::new(),
+                    indexes,
                     foreign_keys: Vec::new(),
                     description: None,
                 },
