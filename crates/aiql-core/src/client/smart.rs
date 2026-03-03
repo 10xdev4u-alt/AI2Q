@@ -1,78 +1,92 @@
-use crate::{ExecutionEngine, ExecutionResult, QueryHealer, Schema, Translator, EmbeddingEngine, SemanticCache};
+use crate::{ExecutionEngine, ExecutionResult, QueryHealer, Schema, Translator, EmbeddingEngine, SemanticCache, PrivacyGuard};
 
-pub struct SmartClient<T, E, H, V, C>
+pub struct SmartClient<T, E, H, V, C, P>
 where
     T: Translator,
     E: ExecutionEngine,
     H: QueryHealer,
     V: EmbeddingEngine,
     C: SemanticCache,
+    P: PrivacyGuard,
 {
     translator: T,
     engine: E,
     healer: H,
     embedder: V,
     cache: C,
+    privacy: P,
 }
 
-impl<T, E, H, V, C> SmartClient<T, E, H, V, C>
+impl<T, E, H, V, C, P> SmartClient<T, E, H, V, C, P>
 where
     T: Translator,
     E: ExecutionEngine,
     H: QueryHealer,
     V: EmbeddingEngine,
     C: SemanticCache,
+    P: PrivacyGuard,
 {
-    pub fn new(translator: T, engine: E, healer: H, embedder: V, cache: C) -> Self {
+    pub fn new(translator: T, engine: E, healer: H, embedder: V, cache: C, privacy: P) -> Self {
         Self {
             translator,
             engine,
             healer,
             embedder,
             cache,
+            privacy,
         }
     }
 
     pub async fn ask(&self, prompt: &str, schema: &Schema, dialect: crate::DatabaseDialect, session: Option<&crate::Session>) -> anyhow::Result<ExecutionResult> {
         log::info!("AIQL: Received prompt: '{}'", prompt);
 
-        // 1. Semantic Cache Lookup
-        log::debug!("AIQL: Checking semantic cache...");
-        let embedding = self.embedder.embed(prompt).await?;
-        if let Some(cached_plan) = self.cache.get(&embedding).await? {
-            log::info!("AIQL: Semantic cache hit!");
-            return self.engine.execute(&cached_plan.raw_query).await;
+        // 1. Privacy Scrubbing
+        let scrubbed_prompt = self.privacy.scrub_prompt(prompt).await?;
+        if scrubbed_prompt != prompt {
+            log::info!("AIQL: PII detected and scrubbed from prompt");
         }
 
-        // 2. Translate
+        // 2. Semantic Cache Lookup
+        log::debug!("AIQL: Checking semantic cache...");
+        let embedding = self.embedder.embed(&scrubbed_prompt).await?;
+        if let Some(cached_plan) = self.cache.get(&embedding).await? {
+            log::info!("AIQL: Semantic cache hit!");
+            let mut result = self.engine.execute(&cached_plan.raw_query).await?;
+            if let Some(data) = result.data {
+                result.data = Some(self.privacy.mask_results(data).await?);
+            }
+            return Ok(result);
+        }
+
+        // 3. Translate
         log::debug!("AIQL: Translating prompt for {:?}...", dialect);
-        let plan = self.translator.translate(prompt, schema, dialect, session).await?;
+        let plan = self.translator.translate(&scrubbed_prompt, schema, dialect, session).await?;
         log::debug!("AIQL: Generated query: {}", plan.raw_query);
 
-        // 3. Dry Run
+        // 4. Dry Run
         log::debug!("AIQL: Performing dry-run validation...");
         if !self.engine.dry_run(&plan.raw_query).await? {
              log::warn!("AIQL: Dry run failed for generated query");
              return Err(anyhow::anyhow!("Dry run failed for generated query"));
         }
 
-        // 4. Store in Cache if valid
+        // 5. Store in Cache if valid
         self.cache.set(&embedding, plan.clone()).await?;
 
-        // 5. Execute
+        // 6. Execute
         log::debug!("AIQL: Executing query...");
         let mut result = self.engine.execute(&plan.raw_query).await?;
 
-        // 4. Self-Healing Loop
+        // 7. Self-Healing Loop
         if !result.success {
             if let Some(error_msg) = result.error.clone() {
                 log::warn!("AIQL: Query failed: {}. Attempting self-healing...", error_msg);
                 
-                // 5. Heal
+                // 8. Heal
                 let healed_plan = self.healer.heal(&plan.raw_query, &error_msg, schema).await?;
                 log::info!("AIQL: Healed query: {}", healed_plan.raw_query);
                 
-                // 6. Retry
+                // 9. Retry
                 result = self.engine.execute(&healed_plan.raw_query).await?;
                 if result.success {
                     log::info!("AIQL: Self-healing successful!");
@@ -80,6 +94,11 @@ where
                     log::error!("AIQL: Self-healing failed: {:?}", result.error);
                 }
             }
+        }
+
+        // 10. Privacy Masking on results
+        if let Some(data) = result.data {
+            result.data = Some(self.privacy.mask_results(data).await?);
         }
 
         log::info!("AIQL: Request completed in {}ms", result.execution_time_ms);
@@ -209,6 +228,13 @@ mod tests {
         async fn set(&self, _embedding: &[f32], _plan: QueryPlan) -> anyhow::Result<()> { Ok(()) }
     }
 
+    struct MockPrivacy;
+    #[async_trait]
+    impl PrivacyGuard for MockPrivacy {
+        async fn scrub_prompt(&self, prompt: &str) -> anyhow::Result<String> { Ok(prompt.to_string()) }
+        async fn mask_results(&self, data: serde_json::Value) -> anyhow::Result<serde_json::Value> { Ok(data) }
+    }
+
     fn mock_schema() -> Schema {
         Schema {
             version: "1.0".to_string(),
@@ -219,7 +245,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_smart_client_success() {
-        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache);
+        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
         let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await.unwrap();
         assert!(result.success);
@@ -227,7 +253,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_smart_client_healing() {
-        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder, MockCache);
+        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
         let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await.unwrap();
         assert!(result.success);
@@ -245,7 +271,7 @@ mod tests {
                 Ok(false)
             }
         }
-        let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer, MockEmbedder, MockCache);
+        let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
         let result = client.ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await;
         assert!(result.is_err());
@@ -273,7 +299,7 @@ mod tests {
             }
         }
 
-        let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache);
+        let client = SmartClient::new(VectorTranslator, MockEngine { fail_first: false }, MockHealer, MockEmbedder, MockCache, MockPrivacy);
         let schema = mock_schema();
         let result = client.vector_ask("prompt", &schema, crate::DatabaseDialect::Postgres, None).await.unwrap();
         assert!(result.success);
