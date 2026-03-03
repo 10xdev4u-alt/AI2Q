@@ -12,4 +12,5 @@ type ExecutionLog struct {
 	Success     bool   `json:"success"`
 	Error       string `json:"error"`
 	Dialect     string `json:"dialect"`
+	PIIDetected bool   `json:"pii_detected"`
 }
