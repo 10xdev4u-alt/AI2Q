@@ -9,6 +9,7 @@ pub mod vector;
 pub mod cache;
 pub mod privacy;
 pub mod discovery;
+pub mod export;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -213,6 +214,12 @@ pub trait RelationshipDiscoverer {
 pub trait MockDataGenerator {
     /// Generates mock data queries based on a prompt and schema.
     async fn generate_mock_data(&self, prompt: &str, schema: &Schema, dialect: DatabaseDialect) -> anyhow::Result<Vec<String>>;
+}
+
+/// Exporter exports query plans to external platforms.
+pub trait Exporter {
+    /// Exports a query plan to a platform-specific format.
+    fn export(&self, plan: &QueryPlan) -> anyhow::Result<String>;
 }
 
 #[cfg(test)]
