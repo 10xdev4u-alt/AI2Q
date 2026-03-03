@@ -126,11 +126,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_smart_client_healing() {
-        let client = SmartClient::new(MockTranslator, MockEngine { fail_first: true }, MockHealer);
+    async fn test_smart_client_dry_run_failure() {
+        struct FailingEngine;
+        #[async_trait]
+        impl ExecutionEngine for FailingEngine {
+            async fn execute(&self, _query: &str) -> anyhow::Result<ExecutionResult> {
+                Ok(ExecutionResult { success: true, data: None, error: None, execution_time_ms: 0 })
+            }
+            async fn dry_run(&self, _query: &str) -> anyhow::Result<bool> {
+                Ok(false)
+            }
+        }
+        let client = SmartClient::new(MockTranslator, FailingEngine, MockHealer);
         let schema = Schema { tables: HashMap::new() };
-        let result = client.ask("prompt", &schema).await.unwrap();
-        assert!(result.success);
-        // The mock engine will succeed on the second attempt because the healed query contains "Healed"
+        let result = client.ask("prompt", &schema).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap().to_string(), "Dry run failed for generated query");
     }
 }
