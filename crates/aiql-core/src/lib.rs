@@ -35,12 +35,13 @@ pub trait EmbeddingEngine {
     async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>>;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum DatabaseDialect {
     Postgres,
     MySQL,
     SQLite,
     MongoDB,
+    Supabase,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

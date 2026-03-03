@@ -42,6 +42,7 @@ impl Translator for OllamaTranslator {
                 crate::DatabaseDialect::Postgres => "PostgreSQL",
                 crate::DatabaseDialect::MySQL => "MySQL",
                 crate::DatabaseDialect::SQLite => "SQLite",
+                crate::DatabaseDialect::Supabase => "PostgreSQL (Supabase optimized)",
             },
             context.now,
             schema_context

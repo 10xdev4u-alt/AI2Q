@@ -93,6 +93,7 @@ impl Translator for OpenAITranslator {
                 crate::DatabaseDialect::Postgres => "PostgreSQL",
                 crate::DatabaseDialect::MySQL => "MySQL",
                 crate::DatabaseDialect::SQLite => "SQLite",
+                crate::DatabaseDialect::Supabase => "PostgreSQL (Supabase optimized)",
             },
             context.now,
             match dialect {
