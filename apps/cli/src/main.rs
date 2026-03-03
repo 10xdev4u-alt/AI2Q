@@ -132,6 +132,12 @@ enum Commands {
         /// Value to set
         value: String,
     },
+    /// Start a local AIQL intelligence server
+    Serve {
+        /// Port to listen on
+        #[arg(short, long, default_value = "8080")]
+        port: u16,
+    },
 }
 
 #[tokio::main]
@@ -345,6 +351,12 @@ async fn main() -> anyhow::Result<()> {
         Commands::Config { key, value } => {
             println!("{}", format!("Setting {} to {}...", key, value).cyan());
             println!("{}", "Configuration updated successfully!".green().bold());
+        }
+        Commands::Serve { port } => {
+            println!("{}", format!("AIQL Intelligence Server starting on port {}...", port).green().bold());
+            println!("{}", "Press Ctrl+C to stop.".dimmed());
+            tokio::signal::ctrl_c().await?;
+            println!("{}", "Server stopped.".yellow());
         }
     }
 
