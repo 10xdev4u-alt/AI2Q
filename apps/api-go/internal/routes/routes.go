@@ -180,6 +180,7 @@ func Setup(db *gorm.DB, cfg *config.Config, svc *Services) *gin.Engine {
 
 	// Dynamic Endpoints
 	r.GET("/e/:path", endpointHandler.Execute)
+	r.POST("/e/:path", endpointHandler.Execute)
 	r.POST("/api/endpoints", endpointHandler.Create)
 
 	// Health check
