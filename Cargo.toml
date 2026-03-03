@@ -3,6 +3,7 @@ members = [
     "crates/aiql-core",
     "crates/aiql-ffi",
     "apps/cli",
+    "bindings/python",
 ]
 resolver = "2"
 
