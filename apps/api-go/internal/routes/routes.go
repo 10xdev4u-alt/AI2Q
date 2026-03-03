@@ -192,6 +192,12 @@ func Setup(db *gorm.DB, cfg *config.Config, svc *Services) *gin.Engine {
 		blogs.GET("/:slug", blogHandler.GetBySlug)
 	}
 
+	// AIQL Routes
+	aiql := r.Group("/api/aiql")
+	{
+		aiql.POST("/crawl", handlers.CrawlSchema)
+	}
+
 	// Public auth routes
 	auth := r.Group("/api/auth")
 	{
